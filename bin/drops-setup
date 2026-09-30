@@ -1,0 +1,25 @@
+#!/bin/bash
+# drops-setup: one-time sign-in for every service, run after installing.
+#
+# Muse and Dots are web apps in your default browser profile, so signing in here
+# is the same session the dropdown uses. Grok Bot is a desktop app with its own
+# login; this also installs its .desktop entry (the AppImage never does), which
+# is what lets launchers and omabot start it without a terminal.
+
+apps=$HOME/.local/share/applications
+grok=$HOME/Applications/grok-bot
+
+if [[ -x $grok/AppRun ]]; then
+  mkdir -p "$apps"
+  sed "s|^Exec=AppRun|Exec=$grok/AppRun|; s|^Icon=grok-bot|Icon=$grok/grok-bot.png|" \
+    "$grok/grok-bot.desktop" >"$apps/grok-bot.desktop"
+  echo "Installed $apps/grok-bot.desktop"
+  setsid -f "$grok/AppRun" --no-sandbox >/dev/null 2>&1
+else
+  echo "Grok Bot not found in $grok, skipping (install the AppImage there to use service=grok)"
+fi
+
+setsid -f omarchy-launch-webapp https://muse.ai/ >/dev/null 2>&1
+setsid -f omarchy-launch-webapp https://chatgpt.com/ >/dev/null 2>&1
+
+echo "Sign in to each window that opened, then close them. Your bar icons will drop them down from now on."

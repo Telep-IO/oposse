@@ -1,0 +1,61 @@
+#!/bin/bash
+# drop-toggle <service> [center-x top width height url] | <service> popout
+#
+# Drops a service's window down from the bar as a floating window in the
+# Hyprland special workspace named after the service, or pops that dropdown out
+# into a normal tiled window. Geometry is monitor-local and comes from
+# BarWidget.qml; the defaults only matter when running this by hand.
+
+SVC=$1
+CX=${2:-0} TOP=${3:-40} W=${4:-480} H=${5:-720} URL=$6
+
+# Adding a service = one line here plus icons/<service>.png.
+case $SVC in
+  muse) MATCH='muse\\.ai' LAUNCH=(omarchy-launch-webapp "${URL:-https://muse.ai/}") ;;
+  dots) MATCH='chatgpt\\.com__dots' LAUNCH=(omarchy-launch-webapp "${URL:-https://chatgpt.com/dots/home}") ;;
+  grok) MATCH='grok-bot' LAUNCH=("$HOME/.local/bin/grok-bot") ;;
+  *) echo "drop-toggle: unknown service '$SVC'" >&2; exit 2 ;;
+esac
+
+find_win() { hyprctl clients -j | jq -c "[.[]|select(.initialClass|test(\"$MATCH\"))][0] // empty"; }
+shown() { hyprctl monitors -j | jq -e ".[]|select(.specialWorkspace.name==\"special:$SVC\")" >/dev/null; }
+
+win=$(find_win)
+addr=$(jq -r '.address // empty' <<<"$win")
+dropped=$(jq -r ".workspace.name == \"special:$SVC\"" <<<"$win")
+
+if [[ $2 == popout ]]; then
+  [[ $dropped == true ]] || exit 0
+  ws=$(hyprctl activeworkspace -j | jq -r .id)
+  hyprctl --batch "dispatch hl.dsp.window.move({ workspace = \"$ws\", window = \"address:$addr\" }) ; dispatch hl.dsp.window.float({ action = \"disable\", window = \"address:$addr\" })" >/dev/null
+  exit
+fi
+
+if [[ -n $addr && $dropped != true ]]; then # popped out (or opened outside the bar): just focus it
+  hyprctl dispatch "hl.dsp.focus({ window = \"address:$addr\" })" >/dev/null
+  exit
+fi
+
+if shown; then
+  hyprctl dispatch "hl.dsp.workspace.toggle_special(\"$SVC\")" >/dev/null
+  exit
+fi
+
+read -r mx my mw < <(hyprctl monitors -j | jq -r '.[]|select(.focused)|"\(.x) \(.y) \(.width / .scale | floor)"')
+x=$((CX - W / 2)); ((x > mw - W)) && x=$((mw - W)); ((x < 0)) && x=0
+
+if [[ -z $addr ]]; then
+  # Named runtime rule, so installing the plugin needs no Hyprland config. It is
+  # re-registered on every launch because a config reload drops runtime rules.
+  hyprctl eval "hl.window_rule({ name = \"telep-drops-$SVC\", match = { initial_class = \".*$MATCH.*\" }, tag = \"-default-opacity\", float = true, size = { $W, $H }, move = { $x, $TOP }, workspace = \"special:$SVC silent\", border_size = 0, opacity = \"1 1\" })" >/dev/null
+  setsid -f "${LAUNCH[@]}" >/dev/null 2>&1
+  for _ in {1..100}; do # Electron apps (grok) take longer than a web app
+    addr=$(find_win | jq -r '.address // empty')
+    [[ -n $addr ]] && break
+    sleep 0.1
+  done
+  [[ -n $addr ]] || exit 1
+fi
+
+shown || hyprctl dispatch "hl.dsp.workspace.toggle_special(\"$SVC\")" >/dev/null
+hyprctl --batch "dispatch hl.dsp.window.resize({ x = $W, y = $H, window = \"address:$addr\" }) ; dispatch hl.dsp.window.move({ x = $((mx + x)), y = $((my + TOP)), window = \"address:$addr\" })" >/dev/null

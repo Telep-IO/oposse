@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "telep.drops",
+  "name": "Odropsy",
+  "version": "0.1.0",
+  "author": "telep",
+  "license": "MIT",
+  "description": "Your AI chats in the bar: Muse, ChatGPT Dots and Grok Bot each drop down from the top on a click. Pop one out into a window when you need more room.",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "barWidget": {
+    "displayName": "Drops",
+    "description": "One bar icon per AI app; click to drop it down, click again to tuck it away. Add the widget once per service.",
+    "category": "AI",
+    "aliases": ["drops", "muse", "dots", "chatgpt", "grok", "grokbot"],
+    "allowMultiple": true,
+    "defaultSection": "center",
+    "defaults": {
+      "service": "muse",
+      "url": "",
+      "avatar": "",
+      "width": 480,
+      "heightPercent": 60
+    },
+    "schema": [
+      {
+        "key": "service",
+        "type": "enum",
+        "label": "Service",
+        "options": ["muse", "dots", "grok"],
+        "defaultValue": "muse",
+        "description": "muse = muse.ai, dots = ChatGPT Dots, grok = the Grok Bot desktop app."
+      },
+      {
+        "key": "url",
+        "type": "string",
+        "label": "URL (empty = service default)",
+        "defaultValue": "",
+        "description": "Web services only, e.g. your dot's page https://chatgpt.com/dots/<id>."
+      },
+      {
+        "key": "avatar",
+        "type": "string",
+        "label": "Icon image path (empty = bundled)",
+        "defaultValue": "",
+        "description": "Absolute or ~/ path to a square PNG."
+      },
+      {
+        "key": "width",
+        "type": "integer",
+        "label": "Dropdown width (px)",
+        "min": 360,
+        "max": 1200,
+        "step": 20,
+        "defaultValue": 480
+      },
+      {
+        "key": "heightPercent",
+        "type": "integer",
+        "label": "Dropdown height (% of screen)",
+        "min": 30,
+        "max": 90,
+        "step": 5,
+        "defaultValue": 60
+      }
+    ]
+  }
+}
