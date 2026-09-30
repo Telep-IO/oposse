@@ -2,18 +2,31 @@
   "schemaVersion": 1,
   "id": "telep.drops",
   "name": "Odropsy",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "author": "telep",
   "license": "MIT AND Apache-2.0",
   "description": "All your personal assistants behind one bar icon: Muse, ChatGPT Dots and your Grok Bot roster. Whoever is waiting on you appears beside it; pick one and its chat drops down from the bar.",
-  "kinds": ["bar-widget"],
+  "kinds": [
+    "bar-widget"
+  ],
   "activation": "on-demand",
-  "entryPoints": { "barWidget": "Widget.qml" },
+  "entryPoints": {
+    "barWidget": "Widget.qml"
+  },
   "barWidget": {
     "displayName": "Assistants",
     "description": "One icon for every assistant. Those waiting on you show beside it as their own avatars; click for the list, click a row to drop that chat down.",
     "category": "AI",
-    "aliases": ["drops", "assistants", "muse", "dots", "chatgpt", "grok", "grokbot", "omabot"],
+    "aliases": [
+      "drops",
+      "assistants",
+      "muse",
+      "dots",
+      "chatgpt",
+      "grok",
+      "grokbot",
+      "omabot"
+    ],
     "allowMultiple": false,
     "defaultSection": "center",
     "defaults": {
@@ -27,7 +40,9 @@
       "barMetric": "avatars",
       "ordering": "attention",
       "groupBySection": "true",
-      "maxBarAvatars": 3
+      "maxBarAvatars": 3,
+      "museEyes": "",
+      "dotsEyes": ""
     },
     "schema": [
       {
@@ -63,6 +78,20 @@
         "defaultValue": ""
       },
       {
+        "key": "dotsEyes",
+        "type": "string",
+        "label": "Dots avatar's eyes (with a custom avatar)",
+        "defaultValue": "",
+        "description": "Where the picture's eyes are, as fractions of it: lx,ly,rx,ry,width,height. Live eyes that follow the pointer are drawn there; empty = the picture turns instead."
+      },
+      {
+        "key": "museEyes",
+        "type": "string",
+        "label": "Muse avatar's eyes (with a custom avatar)",
+        "defaultValue": "",
+        "description": "Where the picture's eyes are, as fractions of it: lx,ly,rx,ry,width,height. Live eyes that follow the pointer are drawn there; empty = the picture turns instead."
+      },
+      {
         "key": "width",
         "type": "integer",
         "label": "Dropdown width (px)",
@@ -84,7 +113,11 @@
         "key": "barMetric",
         "type": "enum",
         "label": "What sits beside the icon",
-        "options": ["avatars", "count", "none"],
+        "options": [
+          "avatars",
+          "count",
+          "none"
+        ],
         "defaultValue": "avatars",
         "description": "avatars = the assistants waiting on you, as themselves; count = how many; none = the icon alone."
       },
@@ -92,7 +125,11 @@
         "key": "ordering",
         "type": "enum",
         "label": "Panel order",
-        "options": ["attention", "channels", "flat"],
+        "options": [
+          "attention",
+          "channels",
+          "flat"
+        ],
         "defaultValue": "attention",
         "description": "attention = waiting on you first; channels = Assistants, then your Grok Bot sections; flat = by last message."
       },

@@ -24,6 +24,11 @@ Item {
   // stay out of the way - it has a face of its own.
   property url image: ""
   readonly property bool wearsImage: String(image) !== ""
+  // Where the picture's own eyes are, as fractions of it: [lx, ly, rx, ry, w, h].
+  // Given, those are painted over with the face around them and live eyes are
+  // drawn in their place; without, the whole picture turns instead.
+  property var imageEyes: []
+  readonly property bool liveImageEyes: wearsImage && imageEyes && imageEyes.length === 6
   onImageChanged: {
     if (wearsImage) canvas.loadImage(image)
     else canvas.requestPaint()
@@ -252,16 +257,16 @@ Item {
       Rotation {
         origin.x: canvas.width / 2; origin.y: canvas.height / 2
         axis { x: 0; y: 1; z: 0 }
-        angle: root.wearsImage ? -root.yaw : 0
+        angle: root.wearsImage && !root.liveImageEyes ? -root.yaw : 0
       },
       Rotation {
         origin.x: canvas.width / 2; origin.y: canvas.height / 2
         axis { x: 1; y: 0; z: 0 }
-        angle: root.wearsImage ? root.pitch : 0
+        angle: root.wearsImage && !root.liveImageEyes ? root.pitch : 0
       },
       Translate {
-        x: root.wearsImage ? root.yaw / 26 * root.u * 0.12 : 0
-        y: root.wearsImage ? -root.pitch / 20 * root.u * 0.12 : 0
+        x: root.wearsImage && !root.liveImageEyes ? root.yaw / 26 * root.u * 0.12 : 0
+        y: root.wearsImage && !root.liveImageEyes ? -root.pitch / 20 * root.u * 0.12 : 0
       }
     ]
     onImageLoaded: requestPaint()
@@ -277,6 +282,7 @@ Item {
           root.path(ctx, s)
           ctx.clip()
           ctx.drawImage(root.image, 0, 0, s, s)
+          if (root.liveImageEyes) root.drawImageEyes(ctx, s)
           ctx.restore()
         } else {
           // Not decoded yet: hold the shape rather than flash an empty square.
@@ -370,6 +376,32 @@ Item {
       ctx.restore()
     }
     ctx.restore()
+  }
+
+  // Live eyes over a picture: cover each painted eye with the colour around
+  // it, then draw a dark eye there that follows the gaze and blinks.
+  function drawImageEyes(ctx, s) {
+    var e = imageEyes, w = e[4] * s, h = e[5] * s
+    var dx = Math.max(-1, Math.min(1, yaw / 26)) * w * 0.3
+    var dy = -Math.max(-1, Math.min(1, pitch / 20)) * h * 0.45
+    for (var i = 0; i < 2; i++) {
+      var cx = e[i * 2] * s, cy = e[i * 2 + 1] * s
+      // Face colour: left, right and above the eye (below is often a mouth).
+      var sum = [0, 0, 0], pts = [[cx - w * 0.85, cy], [cx + w * 0.85, cy], [cx, cy - h * 1.3]]
+      for (var k = 0; k < 3; k++) {
+        var d = ctx.getImageData(Math.round(pts[k][0]), Math.round(pts[k][1]), 1, 1).data
+        sum[0] += d[0]; sum[1] += d[1]; sum[2] += d[2]
+      }
+      ctx.fillStyle = Qt.rgba(sum[0] / 765, sum[1] / 765, sum[2] / 765, 1)
+      ctx.beginPath()
+      ctx.ellipse(cx - w * 0.62, cy - h * 0.8, w * 1.24, h * 1.6)
+      ctx.fill()
+      var ew = w * 0.5, eh = Math.max(h, ew) * Math.max(0.08, pose[7 + i * 4] * blink)
+      ctx.fillStyle = "#141018"
+      ctx.beginPath()
+      ctx.ellipse(cx + dx - ew / 2, cy + dy - eh / 2, ew, eh)
+      ctx.fill()
+    }
   }
 
   // ---------------------------------------------------------------- shapes

@@ -122,6 +122,15 @@ Panel {
     if (own !== "") return "file://" + own.replace(/^~/, Quickshell.env("HOME"))
     return b.avatar ? "file://" + b.avatar : ""
   }
+  // Eye spots for the pictures that have eyes (see Avatar.imageEyes). A custom
+  // avatar brings its own via the <service>Eyes setting.
+  readonly property var bundledEyes: ({ dots: "0.37,0.53,0.667,0.53,0.21,0.11" })
+  function eyesFor(b) {
+    if (b.service === "grok") return []
+    var own = String(setting(b.service + "Avatar", "")) !== ""
+    var spec = own ? String(setting(b.service + "Eyes", "")) : (bundledEyes[b.service] || "")
+    return spec === "" ? [] : spec.split(",").map(Number)
+  }
   function colorFor(b) { return b.hex ? b.hex : (b.color === "black" ? fg : dim) }
 
   // Rows the cursor can land on, rebuilt whenever the view changes.
@@ -540,6 +549,7 @@ Panel {
           height: root.barAvatarSize
           shape: modelData.shape
           image: root.avatarFor(modelData)
+          imageEyes: root.eyesFor(modelData)
           fill: root.colorFor(modelData)
           eyeColor: root.eyeInk
           face: root.faceFor(modelData)
@@ -807,6 +817,7 @@ Panel {
                     height: Style.space(28)
                     shape: modelData.kind === "bot" ? modelData.bot.shape : "blob"
                     image: modelData.kind === "bot" ? root.avatarFor(modelData.bot) : ""
+                    imageEyes: modelData.kind === "bot" ? root.eyesFor(modelData.bot) : []
                     fill: modelData.kind === "bot" ? root.colorFor(modelData.bot) : root.dim
                     eyeColor: root.eyeInk
                     face: modelData.kind === "bot" ? root.faceFor(modelData.bot) : "neutral"
