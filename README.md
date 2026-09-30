@@ -7,7 +7,7 @@
 - Click anywhere off the chat to tuck it away. The tabs under it: `‹ all` (back to the list), `pop out` (a normal tiled window), `✕ close` (quit it).
 - Hover a row for pop out / close on that assistant; `✕ close all` in the list header closes every one.
 
-Replaces omusey, odotsy and omabot. The Grok Bot roster and avatars are built on [omabot](https://github.com/njpatel/omabot) by Neil Patel (Apache-2.0, see `LICENSE-omabot`).
+Combines my earlier omusey and odotsy plugins, and builds on [omabot](https://github.com/njpatel/omabot) by Neil Patel for Grok Bot (see [Credits](#credits)).
 
 ## Install
 
@@ -84,3 +84,15 @@ rm -rf ~/.local/state/omarchy/posse   # cached bot avatars
 ```
 
 Window rules are runtime-only and go away with the shell. `posse-setup` leaves Grok Bot's `.desktop` entry in `~/.local/share/applications`; that belongs to Grok Bot, so it stays.
+
+## Credits
+
+The Grok Bot side of Oposse uses code from **[omabot](https://github.com/njpatel/omabot) by Neil Patel**, under the Apache License 2.0 (full text in [`LICENSE-omabot`](LICENSE-omabot)):
+
+- `Avatar.qml`: the Grok Bot avatars, their shapes, colours, eye geometry, poses and blinking. Oposse adds the live eyes on Muse and Dots pictures.
+- `Widget.qml`: the roster list, keyboard controls, ordering and redact mode were started from omabot's widget and modified here to add Muse, Dots, in-place chats, pop out and close.
+- `bin/drops-watch`: reading Grok Bot's state from `~/.config/Grok Bot`.
+
+If you only use Grok Bot, omabot is the original and worth a look. Thanks, Neil.
+
+Oposse's own code is MIT (see [`LICENSE`](LICENSE)).
