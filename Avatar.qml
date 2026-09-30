@@ -246,6 +246,22 @@ Item {
       Rotation {
         origin.x: canvas.width / 2; origin.y: canvas.height * 0.62
         angle: root.tilt + root.spin
+      },
+      // A picture has its face painted on, so the gaze turns the whole head:
+      // it swivels and leans toward where it is looking.
+      Rotation {
+        origin.x: canvas.width / 2; origin.y: canvas.height / 2
+        axis { x: 0; y: 1; z: 0 }
+        angle: root.wearsImage ? -root.yaw : 0
+      },
+      Rotation {
+        origin.x: canvas.width / 2; origin.y: canvas.height / 2
+        axis { x: 1; y: 0; z: 0 }
+        angle: root.wearsImage ? root.pitch : 0
+      },
+      Translate {
+        x: root.wearsImage ? root.yaw / 26 * root.u * 0.12 : 0
+        y: root.wearsImage ? -root.pitch / 20 * root.u * 0.12 : 0
       }
     ]
     onImageLoaded: requestPaint()

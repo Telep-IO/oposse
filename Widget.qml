@@ -877,6 +877,7 @@ Panel {
                   Column {
                     id: badge
                     anchors.verticalCenter: parent.verticalCenter
+                    opacity: index === root.cursor ? 0 : 1   // pop out / close sit here on hover
                     width: Style.space(38)
                     spacing: Style.space(2)
 
