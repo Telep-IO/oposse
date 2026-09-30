@@ -27,11 +27,26 @@ Item {
   // Where the picture's own eyes are, as fractions of it: [lx, ly, rx, ry, w, h].
   // Given, those are painted over with the face around them and live eyes are
   // drawn in their place; without, the whole picture turns instead.
+  // Empty = look for them: detectEyes finds two matching dark spots on the face.
   property var imageEyes: []
-  readonly property bool liveImageEyes: wearsImage && imageEyes && imageEyes.length === 6
+  property bool detectEyes: false
+  property var foundEyes: []
+  property var probePixels: null      // the picture at 96px, for face colours
+  readonly property var eyeSpots: imageEyes && imageEyes.length === 6 ? imageEyes : foundEyes
+  readonly property bool liveImageEyes: wearsImage && eyeSpots.length === 6
+  onEyeSpotsChanged: canvas.requestPaint()
   onImageChanged: {
     if (wearsImage) canvas.loadImage(image)
     else canvas.requestPaint()
+    lookForEyes()
+  }
+  onDetectEyesChanged: lookForEyes()
+  function lookForEyes() {
+    foundEyes = []
+    probePixels = null
+    if (!wearsImage) return
+    probe.loadImage(image)
+    probe.requestPaint()   // already cached: no imageLoaded
   }
 
   property bool cutoutEyes: false
@@ -269,7 +284,8 @@ Item {
         y: root.wearsImage && !root.liveImageEyes ? -root.pitch / 20 * root.u * 0.12 : 0
       }
     ]
-    onImageLoaded: requestPaint()
+    onImageLoaded: { requestPaint(); probe.requestPaint() }
+    onAvailableChanged: if (available && root.wearsImage) loadImage(root.image)
     onPaint: {
       var ctx = getContext("2d")
       ctx.reset()
@@ -381,18 +397,29 @@ Item {
   // Live eyes over a picture: cover each painted eye with the colour around
   // it, then draw a dark eye there that follows the gaze and blinks.
   function drawImageEyes(ctx, s) {
-    var e = imageEyes, w = e[4] * s, h = e[5] * s
+    var e = eyeSpots, w = e[4] * s, h = e[5] * s
     var dx = Math.max(-1, Math.min(1, yaw / 26)) * w * 0.3
     var dy = -Math.max(-1, Math.min(1, pitch / 20)) * h * 0.45
     for (var i = 0; i < 2; i++) {
       var cx = e[i * 2] * s, cy = e[i * 2 + 1] * s
-      // Face colour: left, right and above the eye (below is often a mouth).
-      var sum = [0, 0, 0], pts = [[cx - w * 0.85, cy], [cx + w * 0.85, cy], [cx, cy - h * 1.3]]
-      for (var k = 0; k < 3; k++) {
-        var d = ctx.getImageData(Math.round(pts[k][0]), Math.round(pts[k][1]), 1, 1).data
-        sum[0] += d[0]; sum[1] += d[1]; sum[2] += d[2]
+      // Face colour: a ring of samples around the eye, brighter half averaged
+      // (the rest is the other eye, a mouth, a shadow), read from the 96px
+      // copy - the on-screen canvas is scaled for HiDPI.
+      var px = probePixels
+      if (!px) continue
+      var ring = []
+      for (var k = 0; k < 10; k++) {
+        var ang = k / 10 * 2 * Math.PI
+        var qx = Math.round((e[i * 2] + Math.cos(ang) * e[4] * 0.75) * 96)
+        var qy = Math.round((e[i * 2 + 1] + Math.sin(ang) * e[5] * 1.1) * 96)
+        var at = (Math.min(95, Math.max(0, qy)) * 96 + Math.min(95, Math.max(0, qx))) * 4
+        if (px[at + 3] >= 128) ring.push([px[at], px[at + 1], px[at + 2]])
       }
-      ctx.fillStyle = Qt.rgba(sum[0] / 765, sum[1] / 765, sum[2] / 765, 1)
+      ring.sort(function(a, b) { return (b[0] + b[1] + b[2]) - (a[0] + a[1] + a[2]) })
+      ring = ring.slice(0, Math.max(1, Math.ceil(ring.length / 2)))
+      var sum = [0, 0, 0]
+      for (k = 0; k < ring.length; k++) { sum[0] += ring[k][0]; sum[1] += ring[k][1]; sum[2] += ring[k][2] }
+      ctx.fillStyle = Qt.rgba(sum[0] / 255 / ring.length, sum[1] / 255 / ring.length, sum[2] / 255 / ring.length, 1)
       ctx.beginPath()
       ctx.ellipse(cx - w * 0.62, cy - h * 0.8, w * 1.24, h * 1.6)
       ctx.fill()
@@ -402,6 +429,71 @@ Item {
       ctx.ellipse(cx + dx - ew / 2, cy + dy - eh / 2, ew, eh)
       ctx.fill()
     }
+  }
+
+  // Eye finder: the picture at 96px, its dark connected spots in the face
+  // area, and the best pair - level, side by side, alike in size and shape.
+  // Nothing convincing = no live eyes; the picture turns instead.
+  Item {
+    width: 1; height: 1; clip: true   // off screen, but still painted
+    Canvas {
+      id: probe
+      width: 96; height: 96; opacity: 0
+      onImageLoaded: requestPaint()
+      onAvailableChanged: root.lookForEyes()
+      onPaint: {
+        if (!root.wearsImage || !isImageLoaded(root.image)) return
+        var ctx = getContext("2d")
+        ctx.reset()
+        ctx.drawImage(root.image, 0, 0, 96, 96)
+        root.probePixels = ctx.getImageData(0, 0, 96, 96).data
+        if (root.detectEyes) root.foundEyes = root.findEyes(root.probePixels, 96)
+        canvas.requestPaint()
+      }
+    }
+  }
+
+  function findEyes(px, n) {
+    var lum = function(i) { return px[i * 4 + 3] < 128 ? 255 : (px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2]) / 3 }
+    var x0 = Math.round(n * 0.1), x1 = Math.round(n * 0.9), y0 = Math.round(n * 0.22), y1 = Math.round(n * 0.8)
+    var face = []
+    for (var y = y0; y < y1; y++) for (var x = x0; x < x1; x++) if (px[(y * n + x) * 4 + 3] >= 128) face.push(lum(y * n + x))
+    if (face.length < n * n * 0.1) return []
+    face.sort(function(a, b) { return a - b })
+    var dark = Math.min(80, face[Math.floor(face.length / 2)] * 0.5)
+    var seen = new Uint8Array(n * n), blobs = []
+    for (var sy = y0; sy < y1; sy++) for (var sx = x0; sx < x1; sx++) {
+      var start = sy * n + sx
+      if (seen[start] || lum(start) >= dark) continue
+      var stack = [start], b = { area: 0, sx: 0, sy: 0, l: n, r: 0, t: n, btm: 0 }
+      seen[start] = 1
+      while (stack.length) {
+        var i = stack.pop(), ix = i % n, iy = (i - ix) / n
+        b.area++; b.sx += ix; b.sy += iy
+        b.l = Math.min(b.l, ix); b.r = Math.max(b.r, ix); b.t = Math.min(b.t, iy); b.btm = Math.max(b.btm, iy)
+        var nb = [[ix - 1, iy], [ix + 1, iy], [ix, iy - 1], [ix, iy + 1]]
+        for (var k = 0; k < 4; k++) {
+          var qx = nb[k][0], qy = nb[k][1], q = qy * n + qx
+          if (qx < x0 || qx >= x1 || qy < y0 || qy >= y1 || seen[q] || lum(q) >= dark) continue
+          seen[q] = 1; stack.push(q)
+        }
+      }
+      b.w = b.r - b.l + 1; b.h = b.btm - b.t + 1; b.cx = b.sx / b.area; b.cy = b.sy / b.area
+      if (b.area >= 3 && b.area <= n * n * 0.03 && b.w < n * 0.3 && b.h < n * 0.25) blobs.push(b)
+    }
+    var best = null, bestScore = 1e9
+    for (var a = 0; a < blobs.length; a++) for (var c = 0; c < blobs.length; c++) {
+      var L = blobs[a], R = blobs[c], dx = R.cx - L.cx, dy = Math.abs(R.cy - L.cy)
+      if (dx < n * 0.08 || dx > n * 0.5 || dy > n * 0.07) continue
+      var ratio = Math.max(L.area, R.area) / Math.min(L.area, R.area)
+      var shape = Math.max(L.w / R.w, R.w / L.w) + Math.max(L.h / R.h, R.h / L.h) - 2
+      if (ratio > 2.5 || shape > 1.5) continue
+      var score = dy / n * 10 + (ratio - 1) + shape + Math.abs((L.cx + R.cx) / 2 - n / 2) / n * 2
+      if (score < bestScore) { bestScore = score; best = [L, R] }
+    }
+    if (!best) return []
+    var P = best[0], Q = best[1]
+    return [P.cx / n, P.cy / n, Q.cx / n, Q.cy / n, Math.max(P.w, Q.w) / n, Math.max(P.h, Q.h) / n]
   }
 
   // ---------------------------------------------------------------- shapes

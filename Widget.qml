@@ -122,14 +122,11 @@ Panel {
     if (own !== "") return "file://" + own.replace(/^~/, Quickshell.env("HOME"))
     return b.avatar ? "file://" + b.avatar : ""
   }
-  // Eye spots for the pictures that have eyes (see Avatar.imageEyes). A custom
-  // avatar brings its own via the <service>Eyes setting.
-  readonly property var bundledEyes: ({ dots: "0.37,0.53,0.667,0.53,0.21,0.11" })
+  // Muse and Dots pictures get live eyes, found in the picture itself; the
+  // <service>Eyes setting overrides that for a picture it gets wrong.
   function eyesFor(b) {
-    if (b.service === "grok") return []
-    var own = String(setting(b.service + "Avatar", "")) !== ""
-    var spec = own ? String(setting(b.service + "Eyes", "")) : (bundledEyes[b.service] || "")
-    return spec === "" ? [] : spec.split(",").map(Number)
+    var spec = b.service === "grok" ? "" : String(setting(b.service + "Eyes", ""))
+    return spec === "" || spec === "none" ? [] : spec.split(",").map(Number)
   }
   function colorFor(b) { return b.hex ? b.hex : (b.color === "black" ? fg : dim) }
 
@@ -550,6 +547,7 @@ Panel {
           shape: modelData.shape
           image: root.avatarFor(modelData)
           imageEyes: root.eyesFor(modelData)
+          detectEyes: modelData.service !== "grok" && root.setting(modelData.service + "Eyes", "") !== "none"
           fill: root.colorFor(modelData)
           eyeColor: root.eyeInk
           face: root.faceFor(modelData)
@@ -818,6 +816,8 @@ Panel {
                     shape: modelData.kind === "bot" ? modelData.bot.shape : "blob"
                     image: modelData.kind === "bot" ? root.avatarFor(modelData.bot) : ""
                     imageEyes: modelData.kind === "bot" ? root.eyesFor(modelData.bot) : []
+                    detectEyes: modelData.kind === "bot" && modelData.bot.service !== "grok"
+                                && root.setting(modelData.bot.service + "Eyes", "") !== "none"
                     fill: modelData.kind === "bot" ? root.colorFor(modelData.bot) : root.dim
                     eyeColor: root.eyeInk
                     face: modelData.kind === "bot" ? root.faceFor(modelData.bot) : "neutral"

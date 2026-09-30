@@ -51,6 +51,18 @@ omarchy bar set telep.drops width 560                 # dropdown px, 360-1200
 omarchy bar set telep.drops heightPercent 70          # dropdown % of screen, 30-90
 ```
 
+Avatar pictures with a face get live eyes that follow the pointer and blink:
+the eyes are found in the picture itself (two matching dark spots, side by
+side), so any picture works with no setup. A picture with no face, like the
+Muse logo, turns as a whole instead. If it picks the wrong spots:
+
+```sh
+omarchy bar set telep.drops museEyes 0.35,0.32,0.53,0.30,0.07,0.05   # lx,ly,rx,ry,w,h as fractions
+omarchy bar set telep.drops museEyes none                            # no live eyes
+```
+
+Check the eye finder: `qml6 tests/eyes.qml` (exit 0 = pass).
+
 ## Adding an assistant
 
 1. `bin/drop-toggle`: one `case` line (window class + launch command).

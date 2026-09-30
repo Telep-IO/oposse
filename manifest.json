@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "telep.drops",
   "name": "Odropsy",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "author": "telep",
   "license": "MIT AND Apache-2.0",
   "description": "All your personal assistants behind one bar icon: Muse, ChatGPT Dots and your Grok Bot roster. Whoever is waiting on you appears beside it; pick one and its chat drops down from the bar.",
@@ -80,16 +80,16 @@
       {
         "key": "dotsEyes",
         "type": "string",
-        "label": "Dots avatar's eyes (with a custom avatar)",
+        "label": "Dots avatar's eyes (override)",
         "defaultValue": "",
-        "description": "Where the picture's eyes are, as fractions of it: lx,ly,rx,ry,width,height. Live eyes that follow the pointer are drawn there; empty = the picture turns instead."
+        "description": "Found automatically in the picture. Only if it guesses wrong: lx,ly,rx,ry,width,height as fractions of the picture. none = no live eyes."
       },
       {
         "key": "museEyes",
         "type": "string",
-        "label": "Muse avatar's eyes (with a custom avatar)",
+        "label": "Muse avatar's eyes (override)",
         "defaultValue": "",
-        "description": "Where the picture's eyes are, as fractions of it: lx,ly,rx,ry,width,height. Live eyes that follow the pointer are drawn there; empty = the picture turns instead."
+        "description": "Found automatically in the picture. Only if it guesses wrong: lx,ly,rx,ry,width,height as fractions of the picture. none = no live eyes."
       },
       {
         "key": "width",
