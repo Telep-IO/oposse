@@ -1,4 +1,4 @@
-# Odropsy
+# Oposse
 
 **All your personal assistants behind one icon in the [Omarchy](https://omarchy.org) bar:** Muse, ChatGPT Dots and your Grok Bot roster.
 
@@ -12,14 +12,21 @@ Replaces omusey, odotsy and omabot. The Grok Bot roster and avatars are built on
 ## Install
 
 ```sh
-omarchy plugin add https://github.com/JonTelep/odropsy.git --enable
-~/.config/omarchy/plugins/telep.drops/bin/drops-setup   # one-time sign-in
+omarchy plugin add https://github.com/Telep-IO/oposse.git --enable
+~/.config/omarchy/plugins/telep.posse/bin/posse-setup   # one-time sign-in
 omarchy restart shell
 ```
 
-`drops-setup` opens Muse and ChatGPT in your browser profile and starts Grok Bot, so you sign in to each once. It also installs Grok Bot's `.desktop` entry, which the AppImage never does.
+### Requirements
 
-**Allow notifications** for chatgpt.com and muse.ai when the browser asks. That is how Odropsy knows a web chat has replied.
+- Omarchy Quattro (the Quickshell-based shell, Hyprland with Lua config)
+- A Chromium-based default browser for the Muse and Dots web apps
+- `jq`, `python3`
+- Optional: [Grok Bot](https://grok.com) AppImage in `~/Applications/grok-bot` for the bot roster
+
+`posse-setup` opens Muse and ChatGPT in your browser profile and starts Grok Bot, so you sign in to each once. It also installs Grok Bot's `.desktop` entry, which the AppImage never does.
+
+**Allow notifications** for chatgpt.com and muse.ai when the browser asks. That is how Oposse knows a web chat has replied.
 
 ## How "waiting on you" works
 
@@ -43,12 +50,12 @@ omarchy restart shell
 ## Settings
 
 ```sh
-omarchy bar set telep.drops services dots,grok        # which assistants to list
-omarchy bar set telep.drops dotsUrl https://chatgpt.com/dots/<id>
-omarchy bar set telep.drops dotsAvatar ~/Pictures/dot.png
-omarchy bar set telep.drops museAvatar ~/Pictures/muse.png
-omarchy bar set telep.drops width 560                 # dropdown px, 360-1200
-omarchy bar set telep.drops heightPercent 70          # dropdown % of screen, 30-90
+omarchy bar set telep.posse services dots,grok        # which assistants to list
+omarchy bar set telep.posse dotsUrl https://chatgpt.com/dots/<id>
+omarchy bar set telep.posse dotsAvatar ~/Pictures/dot.png
+omarchy bar set telep.posse museAvatar ~/Pictures/muse.png
+omarchy bar set telep.posse width 560                 # dropdown px, 360-1200
+omarchy bar set telep.posse heightPercent 70          # dropdown % of screen, 30-90
 ```
 
 Avatar pictures with a face get live eyes that follow the pointer and blink:
@@ -57,8 +64,8 @@ side), so any picture works with no setup. A picture with no face, like the
 Muse logo, turns as a whole instead. If it picks the wrong spots:
 
 ```sh
-omarchy bar set telep.drops museEyes 0.35,0.32,0.53,0.30,0.07,0.05   # lx,ly,rx,ry,w,h as fractions
-omarchy bar set telep.drops museEyes none                            # no live eyes
+omarchy bar set telep.posse museEyes 0.35,0.32,0.53,0.30,0.07,0.05   # lx,ly,rx,ry,w,h as fractions
+omarchy bar set telep.posse museEyes none                            # no live eyes
 ```
 
 Check the eye finder: `qml6 tests/eyes.qml` (exit 0 = pass).
@@ -72,5 +79,8 @@ Check the eye finder: `qml6 tests/eyes.qml` (exit 0 = pass).
 ## Remove
 
 ```sh
-omarchy plugin remove telep.drops
+omarchy plugin remove telep.posse
+rm -rf ~/.local/state/omarchy/posse   # cached bot avatars
 ```
+
+Window rules are runtime-only and go away with the shell. `posse-setup` leaves Grok Bot's `.desktop` entry in `~/.local/share/applications`; that belongs to Grok Bot, so it stays.

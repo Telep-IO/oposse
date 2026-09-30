@@ -7,7 +7,7 @@ import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 
-// Odropsy: every personal assistant behind one bar icon. bin/drops-watch
+// Oposse: every personal assistant behind one bar icon. bin/drops-watch
 // streams the Grok Bot roster plus the web assistants (Muse, Dots); whoever is
 // waiting on you shows up beside the icon, and a click on a row drops that chat
 // down from the bar (bin/drop-toggle). Built on omabot by Neil Patel
@@ -16,8 +16,8 @@ import qs.Ui
 
 Panel {
   id: root
-  moduleName: "telep.drops"
-  ipcTarget: "telep.drops"
+  moduleName: "telep.posse"
+  ipcTarget: "telep.posse"
   manageIpc: false
 
   // ---------------------------------------------------------------- settings
@@ -34,7 +34,7 @@ Panel {
   function cycleBarMetric(persist) {
     barMetric = barMetrics[(barMetrics.indexOf(barMetric) + 1) % barMetrics.length]
     if (persist !== false)
-      Quickshell.execDetached(["omarchy", "bar", "set", "telep.drops", "barMetric", barMetric])
+      Quickshell.execDetached(["omarchy", "bar", "set", "telep.posse", "barMetric", barMetric])
   }
 
   // attention: whoever wants you first (oldest wait first, so nobody is
@@ -44,13 +44,13 @@ Panel {
   readonly property var orderings: ["attention", "channels", "flat"]
   function cycleOrdering() {
     ordering = orderings[(orderings.indexOf(ordering) + 1) % orderings.length]
-    Quickshell.execDetached(["omarchy", "bar", "set", "telep.drops", "ordering", ordering])
+    Quickshell.execDetached(["omarchy", "bar", "set", "telep.posse", "ordering", ordering])
     cursor = 0
   }
   property bool groupBySection: String(setting("groupBySection", "true")) !== "false"
   function toggleGrouping() {
     groupBySection = !groupBySection
-    Quickshell.execDetached(["omarchy", "bar", "set", "telep.drops", "groupBySection", groupBySection ? "true" : "false"])
+    Quickshell.execDetached(["omarchy", "bar", "set", "telep.posse", "groupBySection", groupBySection ? "true" : "false"])
   }
 
   readonly property int maxBarAvatars: Math.max(1, Math.min(6, Number(setting("maxBarAvatars", 3))))
@@ -331,7 +331,7 @@ Panel {
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-    WlrLayershell.namespace: "telep-drops-catcher"
+    WlrLayershell.namespace: "telep-posse-catcher"
     anchors { top: true; bottom: true; left: true; right: true }
     mask: Region {
       y: root.dropRect.y
@@ -381,7 +381,7 @@ Panel {
     // Omarchy instantiates a bar widget more than once (a hidden copy is used
     // for measurement), and both copies would register for the same target -
     // the loser silently drops every call. Only the copy actually mounted in a
-    // bar takes the name, so `omarchy-shell telep.drops …` reaches the one
+    // bar takes the name, so `omarchy-shell telep.posse …` reaches the one
     // on screen.
     enabled: root.bar !== null
     target: root.ipcTarget

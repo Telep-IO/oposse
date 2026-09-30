@@ -3,7 +3,7 @@
 # Bot roster from its local state, plus the web assistants (Muse, Dots).
 #
 #   stdout  {"generated_ts":…, "counts":{…}, "sections":[…], "bots":[…]}
-#   cache   ~/.local/state/omarchy/drops/avatars/<version>.png for bots that
+#   cache   ~/.local/state/omarchy/posse/avatars/<version>.png for bots that
 #           wear a picture instead of a shape
 #   args    --interval N   seconds between checks (default 2)
 #
@@ -34,7 +34,7 @@ MARKER = os.path.join(STATE, "sand-session-marker.json")
 # Where decoded avatar images are kept. Grok Bot stores them as base64 data
 # URLs in one blob; QML wants files, and a 200KB string per bot has no business
 # going through a JSON line every couple of seconds.
-CACHE = os.path.expanduser("~/.local/state/omarchy/drops/avatars")
+CACHE = os.path.expanduser("~/.local/state/omarchy/posse/avatars")
 ICONS = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "icons")
 
 # window: the web app's window class (same patterns as bin/drop-toggle).

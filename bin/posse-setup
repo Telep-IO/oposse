@@ -1,5 +1,5 @@
 #!/bin/bash
-# drops-setup: one-time sign-in for every service, run after installing.
+# posse-setup: one-time sign-in for every service, run after installing.
 #
 # Muse and Dots are web apps in your default browser profile, so signing in here
 # is the same session the dropdown uses. Grok Bot is a desktop app with its own

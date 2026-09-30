@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "id": "telep.drops",
-  "name": "Odropsy",
-  "version": "0.4.0",
+  "id": "telep.posse",
+  "name": "Oposse",
+  "version": "1.0.0",
   "author": "telep",
   "license": "MIT AND Apache-2.0",
   "description": "All your personal assistants behind one bar icon: Muse, ChatGPT Dots and your Grok Bot roster. Whoever is waiting on you appears beside it; pick one and its chat drops down from the bar.",
@@ -18,7 +18,7 @@
     "description": "One icon for every assistant. Those waiting on you show beside it as their own avatars; click for the list, click a row to drop that chat down.",
     "category": "AI",
     "aliases": [
-      "drops",
+      "posse",
       "assistants",
       "muse",
       "dots",
