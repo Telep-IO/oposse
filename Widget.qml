@@ -380,10 +380,11 @@ Panel {
   IpcHandler {
     // Omarchy instantiates a bar widget more than once (a hidden copy is used
     // for measurement), and both copies would register for the same target -
-    // the loser silently drops every call. Only the copy actually mounted in a
-    // bar takes the name, so `omarchy-shell telep.posse …` reaches the one
-    // on screen.
-    enabled: root.bar !== null
+    // the loser silently drops every call. Each monitor's bar mounts its own
+    // copy too, so only the one on the focused monitor takes the name and
+    // `omarchy-shell telep.posse …` reaches the one you are looking at.
+    enabled: root.bar !== null && root.screen !== null
+      && Hyprland.focusedMonitor !== null && Hyprland.focusedMonitor.name === root.screen.name
     target: root.ipcTarget
     function open(): void { root.open() }
     function close(): void { root.close() }

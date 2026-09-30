@@ -96,3 +96,5 @@ The Grok Bot side of Oposse uses code from **[omabot](https://github.com/njpatel
 If you only use Grok Bot, omabot is the original and worth a look. Thanks, Neil.
 
 Oposse's own code is MIT (see [`LICENSE`](LICENSE)).
+
+Oposse is an independent project. It is not affiliated with, endorsed by or sponsored by Meta, OpenAI or xAI. Muse, ChatGPT, Dots and Grok are trademarks of their respective owners.
