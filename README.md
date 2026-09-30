@@ -3,8 +3,9 @@
 **All your personal assistants behind one icon in the [Omarchy](https://omarchy.org) bar:** Muse, ChatGPT Dots and your Grok Bot roster.
 
 - When an assistant finishes and is waiting on you, its avatar appears next to the icon.
-- Click the icon for the list of every assistant. Click one and its chat drops down from the bar.
-- Click the icon again to tuck the chat away. The `pop out` tab under the dropdown turns it into a normal window.
+- Click the icon for the list of every assistant. Click one and the list turns into its chat, in place.
+- Click anywhere off the chat to tuck it away. The tabs under it: `‹ all` (back to the list), `pop out` (a normal tiled window), `✕ close` (quit it).
+- Hover a row for pop out / close on that assistant; `✕ close all` in the list header closes every one.
 
 Replaces omusey, odotsy and omabot. The Grok Bot roster and avatars are built on [omabot](https://github.com/njpatel/omabot) by Neil Patel (Apache-2.0, see `LICENSE-omabot`).
 
@@ -31,8 +32,9 @@ omarchy restart shell
 
 | | |
 |---|---|
-| click icon | open the list |
-| click a row / ⏎ | drop that chat down |
+| click icon | open the list (or, with a chat down, go back to it) |
+| click a row / ⏎ | turn the list into that chat |
+| click off the chat | tuck it away |
 | right-click icon | drop the assistant waiting longest |
 | middle-click / r | cycle what sits beside the icon: avatars, count, none |
 | g | cycle order: attention, channels, flat |

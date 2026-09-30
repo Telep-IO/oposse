@@ -1,61 +1,87 @@
 #!/bin/bash
-# drop-toggle <service> [center-x top width height url] | <service> popout
+# drop-toggle show <service> <monitor> <x> <y> <w> <h> [url]   prints the window address
+# drop-toggle hide                                              tuck away whatever is down
+# drop-toggle popout <service> [url]                            into a normal tiled window
+# drop-toggle close <service|all>
 #
-# Drops a service's window down from the bar as a floating window in the
-# Hyprland special workspace named after the service, or pops that dropdown out
-# into a normal tiled window. Geometry is monitor-local and comes from
-# BarWidget.qml; the defaults only matter when running this by hand.
+# Chats live in the hidden special workspace "drops". Showing one moves it onto
+# the monitor's visible workspace as a floating window at exactly the rectangle
+# given (the panel card's, monitor-local), with animations off, so the panel
+# fading out on top of it reads as the panel turning into the chat. Hiding
+# moves it back. Popped out = tiled on a normal workspace; left alone.
 
-SVC=$1
-CX=${2:-0} TOP=${3:-40} W=${4:-480} H=${5:-720} URL=$6
+SERVICES=(muse dots grok)
 
-# Adding a service = one line here plus icons/<service>.png.
-case $SVC in
-  muse) MATCH='muse\\.ai' LAUNCH=(omarchy-launch-webapp "${URL:-https://muse.ai/}") ;;
-  dots) MATCH='chatgpt\\.com__dots' LAUNCH=(omarchy-launch-webapp "${URL:-https://chatgpt.com/dots/home}") ;;
-  grok) MATCH='grok-bot' LAUNCH=("$HOME/.local/bin/grok-bot") ;;
-  *) echo "drop-toggle: unknown service '$SVC'" >&2; exit 2 ;;
-esac
+service() { # sets MATCH and LAUNCH for $1
+  case $1 in
+    muse) MATCH='muse\.ai' LAUNCH=(omarchy-launch-webapp "${2:-https://muse.ai/}") ;;
+    dots) MATCH='chatgpt\.com__dots' LAUNCH=(omarchy-launch-webapp "${2:-https://chatgpt.com/dots/home}") ;;
+    grok) MATCH='grok-bot' LAUNCH=("$HOME/.local/bin/grok-bot") ;;
+    *) echo "drop-toggle: unknown service '$1'" >&2; exit 2 ;;
+  esac
+}
 
-find_win() { hyprctl clients -j | jq -c "[.[]|select(.initialClass|test(\"$MATCH\"))][0] // empty"; }
-shown() { hyprctl monitors -j | jq -e ".[]|select(.specialWorkspace.name==\"special:$SVC\")" >/dev/null; }
+win_of() { hyprctl clients -j | jq -c --arg re "$MATCH" '[.[]|select(.initialClass|test($re))][0] // empty'; }
+dsp() { hyprctl dispatch "$1" >/dev/null; }
 
-win=$(find_win)
-addr=$(jq -r '.address // empty' <<<"$win")
-dropped=$(jq -r ".workspace.name == \"special:$SVC\"" <<<"$win")
+# Every chat window currently down (floating on a normal workspace).
+shown() {
+  local re
+  re=$(for s in "${SERVICES[@]}"; do service "$s"; printf '%s|' "$MATCH"; done)
+  hyprctl clients -j | jq -r --arg re "${re%|}" \
+    '.[]|select((.initialClass|test($re)) and .floating and .workspace.id > 0)|.address'
+}
 
-if [[ $2 == popout ]]; then
-  [[ $dropped == true ]] || exit 0
-  ws=$(hyprctl activeworkspace -j | jq -r .id)
-  hyprctl --batch "dispatch hl.dsp.window.move({ workspace = \"$ws\", window = \"address:$addr\" }) ; dispatch hl.dsp.window.float({ action = \"disable\", window = \"address:$addr\" })" >/dev/null
-  exit
-fi
+hide() {
+  for a in $(shown); do dsp "hl.dsp.window.move({ workspace = \"special:drops\", follow = false, window = \"address:$a\" })"; done
+}
 
-if [[ -n $addr && $dropped != true ]]; then # popped out (or opened outside the bar): just focus it
-  hyprctl dispatch "hl.dsp.focus({ window = \"address:$addr\" })" >/dev/null
-  exit
-fi
-
-if shown; then
-  hyprctl dispatch "hl.dsp.workspace.toggle_special(\"$SVC\")" >/dev/null
-  exit
-fi
-
-read -r mx my mw < <(hyprctl monitors -j | jq -r '.[]|select(.focused)|"\(.x) \(.y) \(.width / .scale | floor)"')
-x=$((CX - W / 2)); ((x > mw - W)) && x=$((mw - W)); ((x < 0)) && x=0
-
-if [[ -z $addr ]]; then
-  # Named runtime rule, so installing the plugin needs no Hyprland config. It is
-  # re-registered on every launch because a config reload drops runtime rules.
-  hyprctl eval "hl.window_rule({ name = \"telep-drops-$SVC\", match = { initial_class = \".*$MATCH.*\" }, tag = \"-default-opacity\", float = true, size = { $W, $H }, move = { $x, $TOP }, workspace = \"special:$SVC silent\", border_size = 0, opacity = \"1 1\" })" >/dev/null
+# Launched hidden: the named runtime rule sends it straight to special:drops,
+# floating and unanimated. Re-registered each launch because a config reload
+# drops runtime rules.
+launch() {
+  hyprctl eval "hl.window_rule({ name = \"telep-drops-$1\", match = { initial_class = \".*${MATCH//\\/\\\\}.*\" }, tag = \"-default-opacity\", float = true, workspace = \"special:drops silent\", no_anim = true, border_size = 0, opacity = \"1 1\" })" >/dev/null
   setsid -f "${LAUNCH[@]}" >/dev/null 2>&1
-  for _ in {1..100}; do # Electron apps (grok) take longer than a web app
-    addr=$(find_win | jq -r '.address // empty')
-    [[ -n $addr ]] && break
+  for _ in {1..100}; do # Electron apps (grok) take a few seconds
+    win=$(win_of)
+    [[ -n $win ]] && return
     sleep 0.1
   done
-  [[ -n $addr ]] || exit 1
-fi
+  return 1
+}
 
-shown || hyprctl dispatch "hl.dsp.workspace.toggle_special(\"$SVC\")" >/dev/null
-hyprctl --batch "dispatch hl.dsp.window.resize({ x = $W, y = $H, window = \"address:$addr\" }) ; dispatch hl.dsp.window.move({ x = $((mx + x)), y = $((my + TOP)), window = \"address:$addr\" })" >/dev/null
+case $1 in
+  show)
+    svc=$2 mon=$3 X=$4 Y=$5 W=$6 H=$7
+    service "$svc" "$8"
+    win=$(win_of)
+    [[ -n $win ]] || launch "$svc" || exit 1
+    addr=$(jq -r .address <<<"$win")
+    if [[ $(jq -r '.floating' <<<"$win") == false && $(jq -r '.workspace.id > 0' <<<"$win") == true ]]; then
+      dsp "hl.dsp.focus({ window = \"address:$addr\" })" # popped out: just go to it
+      exit
+    fi
+    for a in $(shown); do [[ $a != "$addr" ]] && dsp "hl.dsp.window.move({ workspace = \"special:drops\", follow = false, window = \"address:$a\" })"; done
+    read -r mx my ws < <(hyprctl monitors -j | jq -r --arg m "$mon" '.[]|select(.name==$m)|"\(.x) \(.y) \(.activeWorkspace.id)"')
+    hyprctl --batch "dispatch hl.dsp.window.float({ action = \"enable\", window = \"address:$addr\" }) ; dispatch hl.dsp.window.move({ workspace = \"$ws\", follow = false, window = \"address:$addr\" }) ; dispatch hl.dsp.window.resize({ x = $W, y = $H, window = \"address:$addr\" }) ; dispatch hl.dsp.window.move({ x = $((mx + X)), y = $((my + Y)), window = \"address:$addr\" }) ; dispatch hl.dsp.focus({ window = \"address:$addr\" })" >/dev/null
+    echo "$addr"
+    ;;
+  hide) hide ;;
+  popout)
+    service "$2" "$3"
+    win=$(win_of)
+    [[ -n $win ]] || launch "$2" || exit 1
+    addr=$(jq -r .address <<<"$win")
+    ws=$(hyprctl activeworkspace -j | jq -r .id)
+    hyprctl --batch "dispatch hl.dsp.window.move({ workspace = \"$ws\", window = \"address:$addr\" }) ; dispatch hl.dsp.window.float({ action = \"disable\", window = \"address:$addr\" }) ; dispatch hl.dsp.focus({ window = \"address:$addr\" })" >/dev/null
+    ;;
+  close)
+    targets=("$2"); [[ $2 == all ]] && targets=("${SERVICES[@]}")
+    for s in "${targets[@]}"; do
+      service "$s"
+      addr=$(win_of | jq -r '.address // empty')
+      [[ -n $addr ]] && dsp "hl.dsp.window.close({ window = \"address:$addr\" })"
+    done
+    ;;
+  *) sed -n '2,5p' "$0" >&2; exit 2 ;;
+esac

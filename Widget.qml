@@ -249,76 +249,124 @@ Panel {
     return pick
   }
 
-  // Drop an assistant's chat down under the bar icon. Grok Bot has no deep
-  // link to a single bot, so any Grok row drops the app and you pick in there.
+  // Drop an assistant's chat down in place of the panel: the panel card is
+  // sized like the chat, bin/drop-toggle puts the window at exactly the card's
+  // rectangle, then the panel fades off it. Grok Bot has no deep link to a
+  // single bot, so any Grok row drops the app and you pick in there.
   readonly property string toggleBin: Qt.resolvedUrl("bin/drop-toggle").toString().replace(/^file:\/\//, "")
   readonly property var screen: QsWindow.window ? QsWindow.window.screen : null
-  readonly property int dropWidth: Number(setting("width", 480))
   readonly property int dropHeight: Math.round((screen ? screen.height : 1200) * Number(setting("heightPercent", 60)) / 100)
-  readonly property int dropTop: (bar && bar.position === "top" ? bar.barSize : 0) + Style.space(8)
-  property int centerX: 0
-  property string dropped: ""
+  property string dropped: ""        // service whose chat is down
+  property string droppedAddr: ""
+  property var dropRect: Qt.rect(0, 0, 0, 0)
+  property string opening: ""        // name shown while an app launches
 
+  function drop(verb, svc) {
+    Quickshell.execDetached([toggleBin, verb].concat(svc ? [svc, String(setting(svc + "Url", ""))] : []))
+  }
   function openBot(b) {
-    if (!b) return
-    centerX = Math.round(row.mapToItem(null, row.width / 2, 0).x)
-    Quickshell.execDetached([toggleBin, b.service, String(centerX), String(dropTop), String(dropWidth),
-                             String(dropHeight), String(setting(b.service + "Url", ""))])
-    root.close()
+    if (!b || showProc.running) return
+    if (!opened) open()
+    opening = b.service === "grok" ? "Grok Bot" : b.name
+    dropRect = Qt.rect(panel.cardOrigin.x, panel.cardOrigin.y, panel.contentWidth, panel.contentHeight)
+    showProc.svc = b.service
+    showProc.command = [toggleBin, "show", b.service, screen.name, String(Math.round(dropRect.x)),
+                        String(Math.round(dropRect.y)), String(dropRect.width), String(dropRect.height),
+                        String(setting(b.service + "Url", ""))]
+    showProc.running = true
   }
   function openCursor() {
     var r = rows[cursor]
     if (r && r.kind === "bot") openBot(r.bot)
   }
+  // Click off, "‹ all", or the icon: the chat goes back into hiding.
+  function dismiss(backToList) {
+    if (dropped === "") return
+    dropped = ""
+    if (!backToList) return drop("hide")
+    open()
+    tuckTimer.restart()   // once the panel has faded in over the chat
+  }
+  function popOut(svc) { dropped = ""; drop("popout", svc) }
+  function closeChat(svc) { if (svc === dropped || svc === "all") dropped = ""; drop("close", svc) }
+
+  Timer { id: tuckTimer; interval: 160; onTriggered: root.drop("hide") }
+
+  Process {
+    id: showProc
+    property string svc: ""
+    property string addr: ""
+    onStarted: addr = ""
+    stdout: SplitParser { onRead: function(data) { showProc.addr = String(data).trim() } }
+    onExited: function(code) {
+      root.opening = ""
+      if (code === 0 && addr !== "") { root.droppedAddr = addr; root.dropped = svc }
+      root.close()
+    }
+  }
 
   Connections {
     target: Hyprland
     function onRawEvent(event) {
-      if (event.name !== "activespecial") return
-      var parts = event.data.split(",")
-      if (!root.screen || parts[1] !== root.screen.name) return
-      var name = parts[0].replace(/^special:/, "")
-      root.dropped = root.services.indexOf(name) >= 0 ? name : ""
+      if (root.dropped === "") return
+      if (event.name === "closewindow" && "0x" + event.data === root.droppedAddr) root.dropped = ""
+      else if (event.name === "workspace") root.dismiss(false)
     }
   }
 
-  // While a chat is down, a small tab under its bottom-right corner pops it out
-  // into a normal tiled window.
+  // While a chat is down: a transparent sheet over the rest of the screen that
+  // closes it when clicked, with a hole where the chat is (the bar strip stays
+  // uncovered so the icon still works), and a tab strip under the chat.
   PanelWindow {
+    id: catcher
     visible: root.bar !== null && root.dropped !== "" && root.screen !== null
     screen: root.screen
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.namespace: "telep-drops-popout"
-    anchors { top: true; left: true }
-    implicitWidth: tabLabel.implicitWidth + Style.space(20)
-    implicitHeight: tabLabel.implicitHeight + Style.space(10)
-    margins {
-      left: Math.max(0, Math.min((root.screen ? root.screen.width : 0) - root.dropWidth, root.centerX - root.dropWidth / 2)) + root.dropWidth - implicitWidth
-      top: root.dropTop + root.dropHeight + Style.space(4)
+    WlrLayershell.layer: WlrLayer.Top
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    WlrLayershell.namespace: "telep-drops-catcher"
+    anchors { top: true; bottom: true; left: true; right: true }
+    mask: Region {
+      y: root.dropRect.y
+      width: catcher.width
+      height: catcher.height - root.dropRect.y
+      Region { item: hole; intersection: Intersection.Subtract }
     }
 
-    Rectangle {
+    MouseArea {
       anchors.fill: parent
-      radius: Style.space(6)
-      color: root.bar ? root.bar.background : Color.background
-      border.width: 1
-      border.color: Qt.darker(tabLabel.color, 2)
+      acceptedButtons: Qt.AllButtons
+      onPressed: root.dismiss(false)
+    }
+    Item { id: hole; x: root.dropRect.x; y: root.dropRect.y; width: root.dropRect.width; height: root.dropRect.height }
 
-      Text {
-        id: tabLabel
-        anchors.centerIn: parent
-        text: "\u{f03cb}  pop out"
-        color: root.bar ? root.bar.barForeground : Color.foreground
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.body
-      }
-
-      MouseArea {
-        anchors.fill: parent
-        cursorShape: Qt.PointingHandCursor
-        onClicked: Quickshell.execDetached([root.toggleBin, root.dropped, "popout"])
+    Row {
+      x: hole.x + hole.width - width
+      y: hole.y + hole.height + Style.space(4)
+      spacing: Style.space(4)
+      Repeater {
+        model: [["‹ all", function() { root.dismiss(true) }],
+                ["\u{f03cb} pop out", function() { root.popOut(root.dropped) }],
+                ["✕ close", function() { root.closeChat(root.dropped) }]]
+        Rectangle {
+          required property var modelData
+          width: tabText.implicitWidth + Style.space(16)
+          height: tabText.implicitHeight + Style.space(8)
+          radius: Style.space(6)
+          color: root.bar ? root.bar.background : Color.background
+          border.width: 1
+          border.color: Qt.darker(tabText.color, 2)
+          Text {
+            id: tabText
+            anchors.centerIn: parent
+            text: modelData[0]
+            color: root.bar ? root.bar.barForeground : Color.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
+          MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: modelData[1]() }
+        }
       }
     }
   }
@@ -334,6 +382,8 @@ Panel {
     function open(): void { root.open() }
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
+    function show(service: string): void { root.openBot(root.bots.filter(function(b) { return b.service === service })[0]) }
+    function hide(): void { root.dismiss(false) }
     function scrub(): string { root.scrub = !root.scrub; return root.scrub ? "scrubbed" : "clear" }
     function group(): string { root.cycleOrdering(); return root.ordering }
     function order(mode: string): string { root.ordering = mode; return root.ordering }
@@ -549,6 +599,7 @@ Panel {
   function barPressed(buttonCode) {
     if (buttonCode === Qt.RightButton) root.openBot(root.wanting[0] || root.bots[0])
     else if (buttonCode === Qt.MiddleButton) root.cycleBarMetric()
+    else if (root.dropped !== "") root.dismiss(true)
     else root.toggle()
   }
 
@@ -560,8 +611,8 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(420))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight + Style.space(16), Style.space(900))
+    contentWidth: panel.fittedContentWidth(Number(root.setting("width", 480)))
+    contentHeight: Math.min(root.dropHeight, panel.availableCardHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -633,6 +684,15 @@ Panel {
           // ---- header
           Item {
             width: parent.width
+            Text {
+              anchors.right: parent.right
+              text: "✕ close all"
+              color: closeAllArea.containsMouse ? root.fg : root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              MouseArea { id: closeAllArea; anchors.fill: parent; hoverEnabled: true
+                          cursorShape: Qt.PointingHandCursor; onClicked: root.closeChat("all") }
+            }
             height: header.implicitHeight + Style.space(10)
             Column {
               id: header
@@ -640,6 +700,7 @@ Panel {
               spacing: Style.space(2)
               Text {
                 text: {
+                  if (root.opening !== "") return "opening " + root.opening + "…"
                   if (!root.snap) return "starting…"
                   return "ASSISTANTS" + (root.services.indexOf("grok") < 0 ? ""
                     : root.app.running ? " · Grok Bot " + (root.app.version || "") : " · Grok Bot not running")
@@ -864,6 +925,34 @@ Panel {
                     keyCatcher.pointerAt(p.x, p.y)
                   }
                 }
+
+                // Pop out / close, on the hovered row, over the time column.
+                Row {
+                  visible: modelData.kind === "bot" && index === root.cursor
+                  anchors.right: parent.right
+                  anchors.rightMargin: Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(10)
+                  Repeater {
+                    model: [["\u{f03cb}", "popout"], ["✕", "close"]]
+                    Text {
+                      required property var modelData
+                      text: modelData[0]
+                      color: rowBtn.containsMouse ? root.fg : root.dim
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.body
+                      MouseArea {
+                        id: rowBtn
+                        anchors.fill: parent
+                        anchors.margins: -Style.space(4)
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: modelData[1] === "popout" ? root.popOut(rowItem.modelData.bot.service)
+                                                             : root.closeChat(rowItem.modelData.bot.service)
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -887,7 +976,7 @@ Panel {
             height: Style.space(30)
             Text {
               anchors.verticalCenter: parent.verticalCenter
-              text: "j/k move · ⏎ drop down · g " + root.ordering
+              text: "j/k move · ⏎ open · g " + root.ordering
                     + " · h hide · r beside logo: " + root.barMetric
               color: root.dim
               font.family: root.fontFamily

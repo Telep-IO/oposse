@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "telep.drops",
   "name": "Odropsy",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "telep",
   "license": "MIT AND Apache-2.0",
   "description": "All your personal assistants behind one bar icon: Muse, ChatGPT Dots and your Grok Bot roster. Whoever is waiting on you appears beside it; pick one and its chat drops down from the bar.",
