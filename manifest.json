@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "telep",
   "license": "MIT AND Apache-2.0",
-  "description": "All your personal assistants behind one bar icon: Muse, ChatGPT Dots and your Grok Bot roster. Whoever is waiting on you appears beside it; pick one and its chat drops down from the bar.",
+  "description": "Meta Muse, ChatGPT Dots and your Grok Bot (omabot) roster behind one bar icon. Every AI assistant waiting on you shows its avatar beside it; pick one and its chat drops down from the bar.",
   "kinds": [
     "bar-widget"
   ],
