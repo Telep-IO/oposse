@@ -2,48 +2,65 @@
   "schemaVersion": 1,
   "id": "telep.drops",
   "name": "Odropsy",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "telep",
-  "license": "MIT",
-  "description": "Your AI chats in the bar: Muse, ChatGPT Dots and Grok Bot each drop down from the top on a click. Pop one out into a window when you need more room.",
+  "license": "MIT AND Apache-2.0",
+  "description": "All your personal assistants behind one bar icon: Muse, ChatGPT Dots and your Grok Bot roster. Whoever is waiting on you appears beside it; pick one and its chat drops down from the bar.",
   "kinds": ["bar-widget"],
-  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "activation": "on-demand",
+  "entryPoints": { "barWidget": "Widget.qml" },
   "barWidget": {
-    "displayName": "Drops",
-    "description": "One bar icon per AI app; click to drop it down, click again to tuck it away. Add the widget once per service.",
+    "displayName": "Assistants",
+    "description": "One icon for every assistant. Those waiting on you show beside it as their own avatars; click for the list, click a row to drop that chat down.",
     "category": "AI",
-    "aliases": ["drops", "muse", "dots", "chatgpt", "grok", "grokbot"],
-    "allowMultiple": true,
+    "aliases": ["drops", "assistants", "muse", "dots", "chatgpt", "grok", "grokbot", "omabot"],
+    "allowMultiple": false,
     "defaultSection": "center",
     "defaults": {
-      "service": "muse",
-      "url": "",
-      "avatar": "",
+      "services": "muse,dots,grok",
+      "dotsUrl": "",
+      "museUrl": "",
+      "dotsAvatar": "",
+      "museAvatar": "",
       "width": 480,
-      "heightPercent": 60
+      "heightPercent": 60,
+      "barMetric": "avatars",
+      "ordering": "attention",
+      "groupBySection": "true",
+      "maxBarAvatars": 3
     },
     "schema": [
       {
-        "key": "service",
-        "type": "enum",
-        "label": "Service",
-        "options": ["muse", "dots", "grok"],
-        "defaultValue": "muse",
-        "description": "muse = muse.ai, dots = ChatGPT Dots, grok = the Grok Bot desktop app."
+        "key": "services",
+        "type": "string",
+        "label": "Assistants to show",
+        "defaultValue": "muse,dots,grok",
+        "description": "Comma-separated: muse, dots, grok."
       },
       {
-        "key": "url",
+        "key": "dotsUrl",
         "type": "string",
-        "label": "URL (empty = service default)",
+        "label": "Your dot's URL (empty = Dots home)",
         "defaultValue": "",
-        "description": "Web services only, e.g. your dot's page https://chatgpt.com/dots/<id>."
+        "description": "e.g. https://chatgpt.com/dots/<id>"
       },
       {
-        "key": "avatar",
+        "key": "museUrl",
         "type": "string",
-        "label": "Icon image path (empty = bundled)",
-        "defaultValue": "",
-        "description": "Absolute or ~/ path to a square PNG."
+        "label": "Muse URL (empty = muse.ai)",
+        "defaultValue": ""
+      },
+      {
+        "key": "dotsAvatar",
+        "type": "string",
+        "label": "Dots avatar image (empty = bundled)",
+        "defaultValue": ""
+      },
+      {
+        "key": "museAvatar",
+        "type": "string",
+        "label": "Muse avatar image (empty = bundled)",
+        "defaultValue": ""
       },
       {
         "key": "width",
@@ -62,6 +79,37 @@
         "max": 90,
         "step": 5,
         "defaultValue": 60
+      },
+      {
+        "key": "barMetric",
+        "type": "enum",
+        "label": "What sits beside the icon",
+        "options": ["avatars", "count", "none"],
+        "defaultValue": "avatars",
+        "description": "avatars = the assistants waiting on you, as themselves; count = how many; none = the icon alone."
+      },
+      {
+        "key": "ordering",
+        "type": "enum",
+        "label": "Panel order",
+        "options": ["attention", "channels", "flat"],
+        "defaultValue": "attention",
+        "description": "attention = waiting on you first; channels = Assistants, then your Grok Bot sections; flat = by last message."
+      },
+      {
+        "key": "groupBySection",
+        "type": "boolean",
+        "label": "Group the panel by section",
+        "defaultValue": "true"
+      },
+      {
+        "key": "maxBarAvatars",
+        "type": "integer",
+        "label": "Most avatars to show in the bar",
+        "min": 1,
+        "max": 6,
+        "step": 1,
+        "defaultValue": 3
       }
     ]
   }

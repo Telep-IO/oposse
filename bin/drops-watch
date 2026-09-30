@@ -1,0 +1,394 @@
+#!/usr/bin/env python3
+# drops-watch - every personal assistant in one stream of JSON lines: the Grok
+# Bot roster from its local state, plus the web assistants (Muse, Dots).
+#
+#   stdout  {"generated_ts":…, "counts":{…}, "sections":[…], "bots":[…]}
+#   cache   ~/.local/state/omarchy/drops/avatars/<version>.png for bots that
+#           wear a picture instead of a shape
+#   args    --interval N   seconds between checks (default 2)
+#
+# Grok Bot parsing is from omabot (github.com/njpatel/omabot, Apache-2.0, see
+# LICENSE-omabot).
+#
+# Web assistants have no local state. A finished reply shows up as a browser
+# desktop notification, so a Notify call from the browser that names the site
+# marks it waiting; focusing its window clears it.
+#
+# Grok Bot keeps its client state in ~/.config/Grok Bot/sand-client-persistence
+# as blobs whose filenames are base32 of the state key, rewritten whenever
+# something changes. Nothing here is a documented contract - the roster is at
+# schemaVersion 4 - so every field is read defensively and a shape we do not
+# recognise degrades to "no bots" rather than crashing the widget.
+import base64
+import json
+import os
+import re
+import subprocess
+import sys
+import threading
+import time
+
+STATE = os.path.expanduser("~/.config/Grok Bot")
+PERSIST = os.path.join(STATE, "sand-client-persistence")
+MARKER = os.path.join(STATE, "sand-session-marker.json")
+# Where decoded avatar images are kept. Grok Bot stores them as base64 data
+# URLs in one blob; QML wants files, and a 200KB string per bot has no business
+# going through a JSON line every couple of seconds.
+CACHE = os.path.expanduser("~/.local/state/omarchy/drops/avatars")
+ICONS = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "icons")
+
+# window: the web app's window class (same patterns as bin/drop-toggle).
+# notify: text in a browser notification that means it came from this site.
+WEB = {
+    "muse": {"name": "Muse", "title": "muse.ai", "window": r"muse\.ai",
+             "notify": re.compile(r"muse\.ai|\bMuse\b")},
+    "dots": {"name": "Dots", "title": "ChatGPT", "window": r"chatgpt\.com__dots",
+             "notify": re.compile(r"chatgpt\.com|ChatGPT")},
+}
+BROWSERS = re.compile(r"brave|chrom|chrome|vivaldi|edge", re.I)
+web_state = {k: {"awaiting": False, "text": "", "ts": 0.0, "viewed": 0.0} for k in WEB}
+web_lock = threading.Lock()
+web_version = [0]
+
+
+def follow_notifications():
+    """Mark a web assistant waiting when its site posts a desktop notification.
+    ponytail: matches on text, so a notification that never names the site
+    (or a Muse-the-band track on a browser Spotify tab) is missed or misread;
+    a browser extension could report replies exactly if this proves too loose."""
+    try:
+        mon = subprocess.Popen(
+            ["dbus-monitor", "--session",
+             "type='method_call',interface='org.freedesktop.Notifications',member='Notify'"],
+            stdout=subprocess.PIPE, text=True)
+    except OSError:
+        return
+    block = None
+    for line in mon.stdout:
+        if line.startswith(("method call", "method return", "signal", "error")):
+            block = [] if "member=Notify" in line else None
+        elif block is not None:
+            block.append(line)
+            if line.startswith("   int32 "):  # expire_timeout: Notify's last argument
+                on_notify(block)
+                block = None
+
+
+def on_notify(lines):
+    strings = re.findall(r'string "(.*?)"\n', "".join(lines), re.S)
+    if len(strings) < 4 or not BROWSERS.search(strings[0]):
+        return
+    summary, body = strings[2], strings[3]
+    text = "\n".join(strings[1:4])  # icon path, summary, body
+    for key, web in WEB.items():
+        if web["notify"].search(text):
+            with web_lock:
+                web_state[key].update(awaiting=True, text=(body or summary)[:160], ts=time.time())
+                web_version[0] += 1
+            return
+
+
+def clear_focused():
+    """Whatever web assistant you are looking at is no longer waiting on you."""
+    try:
+        cls = json.loads(subprocess.run(["hyprctl", "activewindow", "-j"], capture_output=True,
+                                        text=True, timeout=2).stdout or "{}").get("initialClass") or ""
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return
+    for key, web in WEB.items():
+        if cls and re.search(web["window"], cls):
+            with web_lock:
+                st = web_state[key]
+                if st["awaiting"]:
+                    st["awaiting"] = False
+                    web_version[0] += 1
+                st["viewed"] = time.time()
+
+
+def web_bots():
+    out = []
+    with web_lock:
+        for key, web in WEB.items():
+            st = web_state[key]
+            out.append({
+                "id": "web:" + key, "service": key, "name": web["name"], "title": web["title"],
+                "description": "", "shape": "squircle", "color": None, "hex": None,
+                "avatar": os.path.join(ICONS, key + ".png"),
+                "is_group": False, "members": 0, "unread": 0,
+                "awaiting": st["awaiting"], "working": False, "working_since_ts": 0.0,
+                "muted": False, "last_text": st["text"],
+                "last_activity_ts": st["ts"], "last_viewed_ts": st["viewed"],
+                "focused": False, "pinned": False,
+            })
+    return out
+
+# Avatar palette, lifted from the app bundle so the widget matches it exactly.
+COLORS = {
+    "red": "#FF263C", "orange": "#FF6700", "yellow": "#FF9800", "green": "#00C972",
+    "cyan": "#00BCA6", "blue": "#1084FE", "violet": "#9159FE", "magenta": "#FF309B",
+    "brown": "#936439", "gray": "#777777",
+}
+
+
+def decode_key(path):
+    name = os.path.basename(path)
+    if not name.endswith(".blob"):
+        return ""
+    name = name[:-5]
+    try:
+        return base64.b32decode(name.upper() + "=" * ((8 - len(name) % 8) % 8)).decode("utf-8", "replace")
+    except Exception:
+        return ""
+
+
+def blobs():
+    """key -> (path, mtime) for every persistence blob."""
+    out = {}
+    try:
+        for entry in os.scandir(PERSIST):
+            if not entry.name.endswith(".blob"):
+                continue
+            key = decode_key(entry.path)
+            if key:
+                out[key] = (entry.path, entry.stat().st_mtime)
+    except OSError:
+        pass
+    return out
+
+
+def load(index, suffix):
+    """Value of the first blob whose key ends with `suffix`."""
+    for key, (path, _) in index.items():
+        if key.endswith(suffix):
+            try:
+                with open(path, "rb") as f:
+                    return json.load(f).get("value")
+            except (OSError, ValueError):
+                return None
+    return None
+
+
+# A bot is working when its transcript ends on a user message it has not
+# answered yet. The app streams replies over its gateway and only persists the
+# finished message, so this is the honest local signal - and it is the same
+# window the app itself shows a busy avatar for. Parsing is cached by mtime:
+# transcripts are large and only change when something happens.
+_transcripts = {}
+
+
+def working_state(index, bot_id, now):
+    entry = None
+    for key, (path, mtime) in index.items():
+        if key.endswith("transcript.replicas." + str(bot_id)):
+            entry = (path, mtime)
+            break
+    if not entry:
+        return False, 0.0
+    path, mtime = entry
+    cached = _transcripts.get(bot_id)
+    if not cached or cached[0] != mtime:
+        try:
+            with open(path, "rb") as f:
+                entries = json.load(f).get("value", {}).get("entries") or []
+        except (OSError, ValueError):
+            entries = []
+        last_user = 0.0
+        for e in reversed(entries):
+            kind = e.get("kind")
+            if kind == "send-message":          # the bot answered after it
+                break
+            if kind == "message" and e.get("role") == "user":
+                last_user = (e.get("timestampMs") or 0) / 1000.0
+                break
+        _transcripts[bot_id] = (mtime, last_user)
+        cached = _transcripts[bot_id]
+    since = cached[1]
+    # Cap it: a reply that never came should not leave a bot working forever.
+    return bool(since and now - since < 900), since
+
+
+# Bots with a picture instead of a shape: the roster gives them a null shape
+# and colour and an avatarVersion, and the picture itself lives in a separate
+# blob as a data URL. Decode each one once, to a file named for its version, so
+# a changed picture writes a new file and an unchanged one costs nothing.
+_avatars = (None, {})
+
+
+def avatars(index):
+    """bot id -> path of its decoded avatar image."""
+    global _avatars
+    entry = None
+    for key, (path, mtime) in index.items():
+        if key.endswith("roster.agent-avatars"):
+            entry = (path, mtime)
+            break
+    if not entry:
+        return {}
+    path, mtime = entry
+    if _avatars[0] == mtime:
+        return _avatars[1]
+    out = {}
+    try:
+        with open(path, "rb") as f:
+            entries = json.load(f).get("value", {}).get("entries") or []
+    except (OSError, ValueError):
+        entries = []
+    os.makedirs(CACHE, exist_ok=True)
+    for e in entries:
+        bot_id, version, url = e.get("id"), e.get("version"), e.get("dataUrl") or ""
+        if not bot_id or not version or "," not in url:
+            continue
+        head, b64 = url.split(",", 1)
+        ext = "png" if "png" in head else ("jpg" if "jpeg" in head or "jpg" in head else "img")
+        dest = os.path.join(CACHE, "%s.%s" % (version, ext))
+        if not os.path.exists(dest):
+            try:
+                tmp = dest + ".part"
+                with open(tmp, "wb") as f:
+                    f.write(base64.b64decode(b64))
+                os.replace(tmp, dest)
+            except (OSError, ValueError):
+                continue
+        out[bot_id] = dest
+    # Drop pictures nobody wears any more, so changing an avatar twice does not
+    # leave two dead files behind.
+    keep = set(os.path.basename(p) for p in out.values())
+    try:
+        for name in os.listdir(CACHE):
+            if name not in keep:
+                os.remove(os.path.join(CACHE, name))
+    except OSError:
+        pass
+    _avatars = (mtime, out)
+    return out
+
+
+def marker():
+    try:
+        with open(MARKER) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {"running": False}
+    alive = data.get("aliveAtMs", 0) / 1000.0
+    return {
+        "running": (time.time() - alive) < 120,
+        "version": data.get("appVersion"),
+        "pid": data.get("pid"),
+        "started_ts": (data.get("startedAtMs") or 0) / 1000.0,
+        "alive_ts": alive,
+        "crash_seen": bool(data.get("crashSeen")),
+    }
+
+
+def snapshot(index):
+    roster = load(index, "roster.last-roster") or {}
+    rows = roster.get("rows") if isinstance(roster, dict) else None
+    if not isinstance(rows, list):
+        rows = []
+    sections = (load(index, "sidebar.last-sections") or {}).get("sections") or []
+    selection = (load(index, "selection.last-agent") or {}).get("agentId")
+    refs = load(index, "ui-agent-refs") or {}
+    pinned = refs.get("pinnedAgentIds") or []
+
+    now = time.time()
+    pictures = avatars(index)
+    bots = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("isHiddenFromSidebar"):
+            continue
+        entry = row.get("lastEntry") or {}
+        last_text = entry.get("text") or entry.get("kind") or ""
+        color = row.get("avatarColor")
+        working, working_since = working_state(index, row.get("id"), now)
+        bots.append({
+            "id": row.get("id"),
+            "service": "grok",
+            "name": row.get("name") or "(unnamed)",
+            "title": row.get("title") or "",
+            "description": row.get("description") or "",
+            "shape": row.get("avatarShape") or ("group" if row.get("isGroup") else "squircle"),
+            "color": color,
+            # A picture wins over the shape, the way it does in the app.
+            "avatar": pictures.get(row.get("id")) if row.get("avatarVersion") else None,
+            "hex": COLORS.get(color or "", None),
+            "is_group": bool(row.get("isGroup")),
+            "members": len(row.get("memberIds") or []),
+            "unread": int(row.get("unreadCount") or 0),
+            "awaiting": bool(row.get("awaitingUserResponse")),
+            "working": working,
+            "working_since_ts": working_since,
+            "muted": not row.get("notificationsEnabled", False),
+            "last_text": last_text[:160],
+            "last_activity_ts": (row.get("lastActivityAt") or 0) / 1000.0,
+            "last_viewed_ts": (row.get("lastViewedAt") or 0) / 1000.0,
+            "focused": row.get("id") == selection,
+            "pinned": row.get("id") in pinned,
+        })
+
+    webs = web_bots()
+    by_id = {b["id"]: b for b in bots}
+    grouped, seen = [{"id": "__web__", "name": "Assistants", "bot_ids": [b["id"] for b in webs]}], set()
+    for section in sections if isinstance(sections, list) else []:
+        ids = [i for i in (section.get("agentIds") or []) if i in by_id]
+        seen.update(ids)
+        if ids or section.get("id") != "__agents__":
+            grouped.append({"id": section.get("id"), "name": section.get("name") or "", "bot_ids": ids})
+    loose = [b["id"] for b in bots if b["id"] not in seen]
+    if loose:
+        grouped.append({"id": "__loose__", "name": "Grok Bot", "bot_ids": loose})
+    bots = webs + bots
+
+    counts = {
+        "bots": len(bots),
+        "awaiting": sum(1 for b in bots if b["awaiting"]),
+        "working": sum(1 for b in bots if b["working"]),
+        "unread": sum(1 for b in bots if b["unread"] > 0),
+        "unread_messages": sum(b["unread"] for b in bots),
+        "groups": sum(1 for b in bots if b["is_group"]),
+    }
+    return {"generated_ts": time.time(), "app": marker(), "counts": counts,
+            "sections": grouped, "bots": bots}
+
+
+def main():
+    threading.Thread(target=follow_notifications, daemon=True).start()
+    args = sys.argv[1:]
+    interval = 2.0
+    if "--interval" in args:
+        try:
+            interval = max(0.5, float(args[args.index("--interval") + 1]))
+        except (IndexError, ValueError):
+            pass
+
+    last_signature = None
+    last_emit = 0.0
+    while True:
+        clear_focused()
+        index = blobs()
+        # Cheap change detection: the roster/marker mtimes plus the blob count.
+        signature = (
+            len(index),
+            tuple(sorted((k, m) for k, (_, m) in index.items()
+                         if k.endswith(("last-roster", "last-sections", "last-agent",
+                                        "ui-agent-refs", "agent-avatars"))
+                         or "transcript.replicas." in k)),
+            os.path.getmtime(MARKER) if os.path.exists(MARKER) else 0,
+            web_version[0],
+        )
+        now = time.time()
+        # Emit on change, and at least once a minute so "app quit" is noticed.
+        if signature != last_signature or now - last_emit > 60:
+            try:
+                sys.stdout.write(json.dumps(snapshot(index), separators=(",", ":")) + "\n")
+                sys.stdout.flush()
+            except BrokenPipeError:
+                return
+            last_signature, last_emit = signature, now
+        time.sleep(interval)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
