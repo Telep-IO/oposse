@@ -490,6 +490,7 @@ Panel {
   }
   readonly property var barAvatars: (!snap || vertical || barMetric !== "avatars") ? []
     : (barFollow && wanting.length > 0) ? [wanting[0]] : pinnedBot ? [pinnedBot] : []
+  function isPinned(b) { return !!(b && pinnedBot && pinnedBot.id === b.id) }
   function pinBot(b) { Quickshell.execDetached(["omarchy", "bar", "set", "telep.posse", "barPin", b.id]) }
   function toggleFollow() {
     Quickshell.execDetached(["omarchy", "bar", "set", "telep.posse", "barFollow", barFollow ? "false" : "true"])
@@ -881,6 +882,15 @@ Panel {
                         font.pixelSize: Style.font.bodySmall
                         font.bold: modelData.kind === "bot" && (modelData.bot.awaiting || modelData.bot.unread > 0)
                       }
+                      // Always on the one the bar shows when nobody is waiting.
+                      Text {
+                        id: pinTag
+                        visible: modelData.kind === "bot" && root.isPinned(modelData.bot)
+                        text: "\u{f0403} in bar"
+                        color: root.accent
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.caption
+                      }
                       Text {
                         text: modelData.kind === "bot"
                           ? (modelData.bot.is_group ? "group of " + modelData.bot.members
@@ -890,7 +900,7 @@ Panel {
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.caption
                         elide: Text.ElideRight
-                        width: Math.max(0, parent.width - Style.space(120))
+                        width: Math.max(0, parent.width - Style.space(120) - (pinTag.visible ? pinTag.width + Style.space(5) : 0))
                       }
                     }
 
@@ -971,12 +981,12 @@ Panel {
                   anchors.verticalCenter: parent.verticalCenter
                   spacing: Style.space(10)
                   Repeater {
-                    model: [["\u{f0403}", "pin"], ["\u{f03cb}", "popout"], ["✕", "close"]]
+                    model: rowItem.modelData.kind !== "bot" ? [] : (root.isPinned(rowItem.modelData.bot) ? [] : [["\u{f0403} pin", "pin"]])
+                           .concat([["\u{f03cb}", "popout"], ["✕", "close"]])
                     Text {
                       required property var modelData
                       text: modelData[0]
-                      color: rowBtn.containsMouse || (modelData[1] === "pin" && root.pinnedBot
-                             && root.pinnedBot.id === rowItem.modelData.bot.id) ? root.fg : root.dim
+                      color: rowBtn.containsMouse ? root.fg : root.dim
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.body
                       MouseArea {

@@ -2,7 +2,7 @@
 
 **All your personal assistants behind one icon in the [Omarchy](https://omarchy.org) bar:** Muse, ChatGPT Dots and your Grok Bot roster.
 
-- One avatar sits next to the icon: whoever is waiting on you, or your pinned assistant (Muse or Dots by default). Pin one with the pin button on its row; the `bar:` toggle in the panel header switches between "who's waiting" and "pinned only".
+- One avatar sits next to the icon: whoever is waiting on you, or your pinned assistant (Muse or Dots by default). The pinned one is tagged `📌 in bar` in the list; hover another and click `pin` to move it; the `bar:` toggle in the panel header switches between "who's waiting" and "pinned only".
 - Click the icon for the list of every assistant. Click one and the list turns into its chat, in place.
 - Click anywhere off the chat to tuck it away. The tabs under it: `‹ all` (back to the list), `pop out` (a normal tiled window), `✕ close` (quit it).
 - Hover a row for pop out / close on that assistant; `✕ close all` in the list header closes every one.
