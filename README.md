@@ -2,7 +2,7 @@
 
 **All your personal assistants behind one icon in the [Omarchy](https://omarchy.org) bar:** Muse, ChatGPT Dots and your Grok Bot roster.
 
-- When an assistant finishes and is waiting on you, its avatar appears next to the icon.
+- One avatar sits next to the icon: whoever is waiting on you, or your pinned assistant (Muse or Dots by default). Pin one with the pin button on its row; the `bar:` toggle in the panel header switches between "who's waiting" and "pinned only".
 - Click the icon for the list of every assistant. Click one and the list turns into its chat, in place.
 - Click anywhere off the chat to tuck it away. The tabs under it: `‹ all` (back to the list), `pop out` (a normal tiled window), `✕ close` (quit it).
 - Hover a row for pop out / close on that assistant; `✕ close all` in the list header closes every one.
@@ -54,6 +54,7 @@ omarchy bar set telep.posse services dots,grok        # which assistants to list
 omarchy bar set telep.posse dotsUrl https://chatgpt.com/dots/<id>
 omarchy bar set telep.posse dotsAvatar ~/Pictures/dot.png
 omarchy bar set telep.posse museAvatar ~/Pictures/muse.png
+omarchy bar set telep.posse barFollow false             # bar always shows the pinned assistant
 omarchy bar set telep.posse width 560                 # dropdown px, 360-1200
 omarchy bar set telep.posse heightPercent 70          # dropdown % of screen, 30-90
 ```

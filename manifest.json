@@ -39,9 +39,10 @@
       "barMetric": "avatars",
       "ordering": "attention",
       "groupBySection": "true",
-      "maxBarAvatars": 3,
       "museEyes": "",
-      "dotsEyes": ""
+      "dotsEyes": "",
+      "barFollow": "true",
+      "barPin": ""
     },
     "schema": [
       {
@@ -118,7 +119,7 @@
           "none"
         ],
         "defaultValue": "avatars",
-        "description": "avatars = the assistants waiting on you, as themselves; count = how many; none = the icon alone."
+        "description": "avatars = one assistant's avatar (see below); count = how many are waiting on you; none = the icon alone."
       },
       {
         "key": "ordering",
@@ -139,13 +140,18 @@
         "defaultValue": "true"
       },
       {
-        "key": "maxBarAvatars",
-        "type": "integer",
-        "label": "Most avatars to show in the bar",
-        "min": 1,
-        "max": 6,
-        "step": 1,
-        "defaultValue": 3
+        "key": "barFollow",
+        "type": "boolean",
+        "label": "Show whoever is waiting on you",
+        "defaultValue": "true",
+        "description": "On: the bar shows the assistant waiting on you longest, and the pinned one otherwise. Off: always the pinned one. Also the 'bar:' toggle in the panel header."
+      },
+      {
+        "key": "barPin",
+        "type": "string",
+        "label": "Pinned assistant",
+        "defaultValue": "",
+        "description": "Set with the pin button on a row in the panel. Empty = the first web assistant (Muse or Dots)."
       }
     ]
   }

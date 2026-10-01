@@ -53,7 +53,6 @@ Panel {
     Quickshell.execDetached(["omarchy", "bar", "set", "telep.posse", "groupBySection", groupBySection ? "true" : "false"])
   }
 
-  readonly property int maxBarAvatars: Math.max(1, Math.min(6, Number(setting("maxBarAvatars", 3))))
   readonly property string watcher: Qt.resolvedUrl("bin/drops-watch").toString().replace(/^file:\/\//, "")
 
   function setting(name, fallback) {
@@ -274,7 +273,8 @@ Panel {
     if (!b || showProc.running) return
     if (!opened) open()
     opening = b.service === "grok" ? "Grok Bot" : b.name
-    dropRect = Qt.rect(panel.cardOrigin.x, panel.cardOrigin.y, panel.contentWidth, panel.contentHeight)
+    dropRect = Qt.rect(panel.cardOrigin.x, panel.cardOrigin.y, panel.contentWidth,
+                       Math.min(root.dropHeight, panel.availableCardHeight))
     showProc.svc = b.service
     showProc.command = [toggleBin, "show", b.service, screen.name, String(Math.round(dropRect.x)),
                         String(Math.round(dropRect.y)), String(dropRect.width), String(dropRect.height),
@@ -480,8 +480,20 @@ Panel {
   // What the bar draws beside the logo. Nothing waiting means nothing beside
   // it - the logo alone is still the widget, and still opens the panel.
   readonly property bool vertical: !!(bar && bar.vertical)
-  readonly property var barAvatars: (!snap || vertical || barMetric !== "avatars")
-    ? [] : wanting.slice(0, maxBarAvatars)
+  // One avatar: whoever waits longest when following, else the pinned one
+  // (default: the first web assistant, so Muse/Dots sit there out of the box).
+  readonly property bool barFollow: String(setting("barFollow", "true")) !== "false"
+  readonly property var pinnedBot: {
+    var id = String(setting("barPin", ""))
+    return bots.filter(function(b) { return b.id === id })[0]
+      || bots.filter(function(b) { return b.service !== "grok" })[0] || null
+  }
+  readonly property var barAvatars: (!snap || vertical || barMetric !== "avatars") ? []
+    : (barFollow && wanting.length > 0) ? [wanting[0]] : pinnedBot ? [pinnedBot] : []
+  function pinBot(b) { Quickshell.execDetached(["omarchy", "bar", "set", "telep.posse", "barPin", b.id]) }
+  function toggleFollow() {
+    Quickshell.execDetached(["omarchy", "bar", "set", "telep.posse", "barFollow", barFollow ? "false" : "true"])
+  }
   // The glyphs beside it carry their own optical padding; a mark drawn to the
   // full icon canvas would stand taller than all of them.
   readonly property real markSize: Math.round(Style.bar.iconCanvas * 0.82)
@@ -621,7 +633,8 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Number(root.setting("width", 480)))
-    contentHeight: Math.min(root.dropHeight, panel.availableCardHeight)
+    // The list is only as tall as its rows; a chat gets the full drop height.
+    contentHeight: panel.fittedContentHeight(panelFlick.contentHeight, root.dropHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -694,6 +707,17 @@ Panel {
           Item {
             width: parent.width
             Text {
+              anchors.right: closeAll.left
+              anchors.rightMargin: Style.space(12)
+              text: root.barFollow ? "bar: who's waiting" : "bar: pinned only"
+              color: followArea.containsMouse ? root.fg : root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              MouseArea { id: followArea; anchors.fill: parent; hoverEnabled: true
+                          cursorShape: Qt.PointingHandCursor; onClicked: root.toggleFollow() }
+            }
+            Text {
+              id: closeAll
               anchors.right: parent.right
               text: "✕ close all"
               color: closeAllArea.containsMouse ? root.fg : root.dim
@@ -947,11 +971,12 @@ Panel {
                   anchors.verticalCenter: parent.verticalCenter
                   spacing: Style.space(10)
                   Repeater {
-                    model: [["\u{f03cb}", "popout"], ["✕", "close"]]
+                    model: [["\u{f0403}", "pin"], ["\u{f03cb}", "popout"], ["✕", "close"]]
                     Text {
                       required property var modelData
                       text: modelData[0]
-                      color: rowBtn.containsMouse ? root.fg : root.dim
+                      color: rowBtn.containsMouse || (modelData[1] === "pin" && root.pinnedBot
+                             && root.pinnedBot.id === rowItem.modelData.bot.id) ? root.fg : root.dim
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.body
                       MouseArea {
@@ -960,8 +985,9 @@ Panel {
                         anchors.margins: -Style.space(4)
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: modelData[1] === "popout" ? root.popOut(rowItem.modelData.bot.service)
-                                                             : root.closeChat(rowItem.modelData.bot.service)
+                        onClicked: modelData[1] === "pin" ? root.pinBot(rowItem.modelData.bot)
+                                 : modelData[1] === "popout" ? root.popOut(rowItem.modelData.bot.service)
+                                 : root.closeChat(rowItem.modelData.bot.service)
                       }
                     }
                   }
