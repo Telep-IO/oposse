@@ -43,6 +43,15 @@ history, the site's own notifications). Override either if it guesses wrong:
 
 **Allow notifications** for chatgpt.com and muse.ai when the browser asks. That is how Oposse knows a web chat has replied (and how it learns your dot's name).
 
+### Updating
+
+```sh
+omarchy plugin update telep.posse && omarchy restart shell
+```
+
+The shell's hot reload restarts the plugin's scripts but keeps the widget it
+already compiled, so a changed `Widget.qml` only shows after a shell restart.
+
 ## How "waiting on you" works
 
 | Assistant | Signal |
