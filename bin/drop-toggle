@@ -1,5 +1,5 @@
 #!/bin/bash
-# drop-toggle show <service> <monitor> <x> <y> <w> <h> [url]   prints the window address
+# drop-toggle show <service> <monitor> <x> <y> <w> <h> [url]   prints "address width height" (as placed)
 # drop-toggle hide                                              tuck away whatever is down
 # drop-toggle popout <service> [url]                            into a normal tiled window
 # drop-toggle close <service|all>
@@ -83,7 +83,18 @@ case $1 in
     for a in $(shown); do [[ $a != "$addr" ]] && dsp "hl.dsp.window.move({ workspace = \"special:drops\", follow = false, window = \"address:$a\" })"; done
     read -r mx my ws < <(hyprctl monitors -j | jq -r --arg m "$mon" '.[]|select(.name==$m)|"\(.x) \(.y) \(.activeWorkspace.id)"')
     hyprctl --batch "dispatch hl.dsp.window.float({ action = \"enable\", window = \"address:$addr\" }) ; dispatch hl.dsp.window.move({ workspace = \"$ws\", follow = false, window = \"address:$addr\" }) ; dispatch hl.dsp.window.resize({ x = $W, y = $H, window = \"address:$addr\" }) ; dispatch hl.dsp.window.move({ x = $((mx + X)), y = $((my + Y)), window = \"address:$addr\" }) ; dispatch hl.dsp.focus({ window = \"address:$addr\" })" >/dev/null
-    echo "$addr"
+    # An app with a minimum size (Grok Bot: ~520 high) grows past the rectangle
+    # and the compositor then shoves it up to y=0. Read back what it became and
+    # place it again at the same top-left; the caller gets the real size.
+    for _ in 1 2 3; do
+      read -r gw gh < <(hyprctl clients -j | jq -r --arg a "$addr" '.[]|select(.address==$a)|"\(.size[0]) \(.size[1])"')
+      [[ $gw == "$W" && $gh == "$H" ]] && break
+      sleep 0.15
+    done
+    if [[ $gw != "$W" || $gh != "$H" ]]; then
+      dsp "hl.dsp.window.move({ x = $((mx + X)), y = $((my + Y)), window = \"address:$addr\" })"
+    fi
+    echo "$addr ${gw:-$W} ${gh:-$H}"
     ;;
   hide) hide ;;
   prelaunch)

@@ -315,6 +315,45 @@ COLORS = {
 }
 
 
+# A bot with no picked colour or shape still gets one in the app: Grok Bot
+# hashes the bot id (FNV-1a, then a mulberry32 draw for the colour and an
+# avalanche for the shape) into these lists. Same arithmetic, 32-bit, so the
+# widget shows the same face the app does.
+DEFAULT_COLORS = ["brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray"]
+DEFAULT_SHAPES = ["blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop"]
+M32 = 0xFFFFFFFF
+
+
+def _imul(a, b):
+    return ((a & M32) * (b & M32)) & M32
+
+
+def _fnv(s):
+    t = 2166136261
+    for c in s:
+        t ^= ord(c)
+        t = _imul(t, 16777619)
+    return t
+
+
+def default_color(bot_id):
+    h = (_fnv(bot_id) ^ _imul(1, 2654435769)) & M32
+    t = (h ^ _imul(1, 2654435769)) & M32
+    t = (t + 1831565813) & M32
+    n = _imul(t ^ (t >> 15), 1 | t)
+    n = ((n + _imul(n ^ (n >> 7), 61 | n)) ^ n) & M32
+    r = ((n ^ (n >> 14)) & M32) / 4294967296
+    return DEFAULT_COLORS[int(r * len(DEFAULT_COLORS))]
+
+
+def default_shape(bot_id):
+    t = _fnv(bot_id)
+    t = _imul(t ^ (t >> 16), 73244475)
+    t = _imul(t ^ (t >> 13), 3266489909)
+    t = (t ^ (t >> 16)) & M32
+    return DEFAULT_SHAPES[t % len(DEFAULT_SHAPES)]
+
+
 def decode_key(path):
     name = os.path.basename(path)
     if not name.endswith(".blob"):
@@ -505,7 +544,9 @@ def snapshot(index):
             continue
         entry = row.get("lastEntry") or {}
         last_text = entry.get("text") or entry.get("kind") or ""
-        color = row.get("avatarColor")
+        bot_id = str(row.get("id") or "")
+        color = row.get("avatarColor") or default_color(bot_id)
+        shape = row.get("avatarShape") or ("group" if row.get("isGroup") else default_shape(bot_id))
         working, working_since = working_state(index, row.get("id"), now)
         bots.append({
             "id": row.get("id"),
@@ -513,7 +554,7 @@ def snapshot(index):
             "name": row.get("name") or "(unnamed)",
             "title": row.get("title") or "",
             "description": row.get("description") or "",
-            "shape": row.get("avatarShape") or ("group" if row.get("isGroup") else "squircle"),
+            "shape": shape,
             "color": color,
             # A picture wins over the shape, the way it does in the app.
             "avatar": pictures.get(row.get("id")) if row.get("avatarVersion") else None,

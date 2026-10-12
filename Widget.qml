@@ -309,10 +309,18 @@ Panel {
     property string svc: ""
     property string addr: ""
     onStarted: addr = ""
+    // "address width height": the chat may be bigger than asked (an app's
+    // minimum size); the hole and tab strip follow what it really became.
     stdout: SplitParser { onRead: function(data) { showProc.addr = String(data).trim() } }
     onExited: function(code) {
       root.opening = ""
-      if (code === 0 && addr !== "") { root.droppedAddr = addr; root.dropped = svc }
+      var parts = addr.split(/\s+/)
+      if (code === 0 && parts[0] !== "") {
+        root.droppedAddr = parts[0]
+        if (parts.length >= 3)
+          root.dropRect = Qt.rect(root.dropRect.x, root.dropRect.y, Number(parts[1]) || root.dropRect.width, Number(parts[2]) || root.dropRect.height)
+        root.dropped = svc
+      }
       root.close()
     }
   }
