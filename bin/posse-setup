@@ -19,22 +19,42 @@
 here=$(dirname "$(realpath "$0")")
 toggle=$here/drop-toggle
 state=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/posse
-mkdir -p "$state"
-auto=0; [[ $1 == --auto ]] && auto=1
+auto=0
+
+# Persona names and pictures live in $state. Create it mode 0700 whatever the
+# umask is (mkdir -m applies that mode in the creating syscall; the umask can
+# only clear bits) and tighten a tree an older install left at 0755/0644.
+prepare_state() {
+  local parent
+  parent=$(dirname "$state")
+  [[ -d $parent ]] || mkdir -p -- "$parent"
+  if [[ -L $state ]]; then
+    return 0
+  fi
+  mkdir -m 700 -- "$state" 2>/dev/null || true
+  [[ -d $state && ! -L $state ]] || return 0
+  chmod 700 -- "$state"
+  # -type d/f does not match symlinks, so chmod is not pointed at some other target.
+  find "$state" -xdev -type d -exec chmod 700 {} +
+  find "$state" -xdev -type f -exec chmod 600 {} +
+}
+
+# The lock is created mode 0600. Opening an existing file does not change its
+# mode, so chmod after; prepare_state already fixed one left behind at 0644.
+open_lock() {
+  local old
+  old=$(umask)
+  umask 077
+  exec 9>"$state/setup.lock"
+  umask "$old"
+  [[ -L $state/setup.lock ]] || chmod 600 -- "$state/setup.lock"
+}
 
 log() { (( auto )) && echo "posse-setup: $*" >&2 || echo "$*"; }
-
-# One run at a time: the widget lives once per monitor and each copy asks.
-# Long-lived children (the apps) must not inherit fd 9, or the lock outlives
-# this run; drop-toggle closes it when launching.
-exec 9>"$state/setup.lock"
-flock -n 9 || { log "another setup is running"; exit 0; }
 
 # The widget's settings are its bar entry in shell.json.
 setting() { jq -r --arg k "$1" '[.bar.layout[][]?|select(.id=="telep.posse")][0][$k] // empty' \
   "${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/shell.json" 2>/dev/null; }
-services=$(setting services); [[ -n $services ]] || services=muse,dots,grok
-services=${services//,/ }
 
 grok_installed() { bash "$toggle" --grok-bin >/dev/null 2>&1; }
 grok_running() { hyprctl clients -j | jq -e '.[]|select(.initialClass|test("grok-bot"))' >/dev/null 2>&1; }
@@ -103,17 +123,32 @@ setup_web() { # $1 service
   esac
 }
 
-for svc in $services; do
-  case $svc in
-    grok) setup_grok ;;
-    muse|dots) setup_web "$svc" ;;
-  esac
-done
+# Sourced by tests/state-perms.py so prepare_state and open_lock can be checked
+# without launching assistants. Executing the script runs the setup below.
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  [[ $1 == --auto ]] && auto=1
+  prepare_state
+  # One run at a time: the widget lives once per monitor and each copy asks.
+  # Long-lived children (the apps) must not inherit fd 9, or the lock outlives
+  # this run; drop-toggle closes it when launching.
+  open_lock
+  flock -n 9 || { log "another setup is running"; exit 0; }
 
-(( auto )) || cat <<MSG
+  services=$(setting services); [[ -n $services ]] || services=muse,dots,grok
+  services=${services//,/ }
+
+  for svc in $services; do
+    case $svc in
+      grok) setup_grok ;;
+      muse|dots) setup_web "$svc" ;;
+    esac
+  done
+
+  (( auto )) || cat <<MSG
 
 Done. Anything that needed a sign-in is on screen; sign in and leave the window
 (or close it). The bar icon drops each chat down from now on.
 Allow notifications for chatgpt.com and muse.ai when the browser asks: that is
 how Oposse knows a web chat replied.
 MSG
+fi
