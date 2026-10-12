@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "telep.posse",
   "name": "Oposse",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "telep",
   "license": "MIT AND Apache-2.0",
   "description": "Meta Muse, ChatGPT Dots and your Grok Bot roster behind one bar icon. Every AI assistant waiting on you shows its avatar beside it; pick one and its chat drops down from the bar.",
