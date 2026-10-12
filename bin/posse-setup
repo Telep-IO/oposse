@@ -76,8 +76,9 @@ setup_web() { # $1 service
   local svc=$1 url title
   url=$(setting "${svc}Url")
   "$toggle" prelaunch "$svc" "$url" || { log "$svc: could not open the web app (is a Chromium-based browser the default?)"; return; }
-  # Give the page time to load and settle on its signed-in title.
-  for i in $(seq 1 120); do title=$(web_title "$svc"); signed_in "$svc" "$title" && (( i > 12 )) && break; sleep 0.25; done
+  # Give the page time to load and settle on its signed-in title. A hidden
+  # window gets throttled by the browser, so this can take a while.
+  for i in $(seq 1 240); do title=$(web_title "$svc"); signed_in "$svc" "$title" && (( i > 12 )) && break; sleep 0.25; done
   if signed_in "$svc" "$title"; then
     log "$svc ready (hidden): $title"
   else

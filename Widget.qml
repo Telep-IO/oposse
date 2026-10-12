@@ -171,11 +171,15 @@ Panel {
   }
 
   // ---------------------------------------------------------------- watcher
+  // The watcher also kicks off bin/posse-setup --auto once per shell start
+  // (install Grok Bot if missing, start it, warm Muse and Dots up hidden, show
+  // only a sign-in page); autoSetup=false turns that off.
   Process {
     id: watcherProc
     command: [root.watcher, "--interval", "2",
               "--museName", String(setting("museName", "")), "--dotsName", String(setting("dotsName", "")),
-              "--museAvatar", String(setting("museAvatar", "")), "--dotsAvatar", String(setting("dotsAvatar", ""))]
+              "--museAvatar", String(setting("museAvatar", "")), "--dotsAvatar", String(setting("dotsAvatar", "")),
+              "--autoSetup", String(setting("autoSetup", "true"))]
     running: true
     stdout: SplitParser { onRead: function(data) { root.parseState(data) } }
     stderr: SplitParser {
@@ -184,27 +188,6 @@ Panel {
     onExited: function(code) { console.warn("drops", "watcher exited", code); restartTimer.start() }
   }
   Timer { id: restartTimer; interval: 5000; onTriggered: watcherProc.running = true }
-
-  // ---------------------------------------------------------------- setup
-  // Every shell start: install Grok Bot if it is missing, start it, warm the
-  // web apps up hidden, and put on screen only what still needs a sign-in.
-  // bin/posse-setup holds a lock, so the widget's copies on other monitors
-  // return at once. autoSetup=false turns it off.
-  readonly property string setupBin: Qt.resolvedUrl("bin/posse-setup").toString().replace(/^file:\/\//, "")
-  property string setupNote: ""
-  Process {
-    id: setupProc
-    command: [root.setupBin, "--auto"]
-    running: String(root.setting("autoSetup", "true")) !== "false"
-    stderr: SplitParser {
-      onRead: function(data) {
-        var line = String(data).replace(/^posse-setup: /, "").trim()
-        if (line !== "") { root.setupNote = line; console.log("posse-setup", line) }
-      }
-    }
-    onExited: function() { setupClear.start() }
-  }
-  Timer { id: setupClear; interval: 20000; onTriggered: root.setupNote = "" }
 
   function parseState(text) {
     try {
@@ -759,7 +742,6 @@ Panel {
                 text: {
                   if (root.opening !== "") return "opening " + root.opening + "…"
                   if (!root.snap) return "starting…"
-                  if (root.setupNote !== "") return "ASSISTANTS · " + root.setupNote
                   return "ASSISTANTS" + (root.services.indexOf("grok") < 0 ? ""
                     : root.app.running ? " · Grok Bot " + (root.app.version || "") : " · Grok Bot not running")
                 }

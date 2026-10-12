@@ -569,6 +569,16 @@ def main():
         if a.startswith("--") and a[2:] in ("museName", "dotsName", "museAvatar", "dotsAvatar") and i + 1 < len(args) and args[i + 1]:
             forced[a[2:]] = os.path.expanduser(args[i + 1])
     load_identity()
+    # Setup runs from here rather than the widget: this process is started on
+    # every load, and posse-setup holds a lock so one copy per shell start does
+    # the work. --autoSetup false (the widget setting) skips it.
+    if "false" not in [args[i + 1] for i, a in enumerate(args) if a == "--autoSetup" and i + 1 < len(args)]:
+        try:
+            subprocess.Popen([os.path.join(os.path.dirname(os.path.realpath(__file__)), "posse-setup"), "--auto"],
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+        except OSError:
+            pass
     threading.Thread(target=follow_notifications, daemon=True).start()
     threading.Thread(target=refresh_identity, daemon=True).start()
 
