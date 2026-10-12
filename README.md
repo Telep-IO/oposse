@@ -15,33 +15,56 @@ Combines my earlier omusey and odotsy plugins, and builds on [omabot](https://gi
 omarchy plugin add https://github.com/Telep-IO/oposse.git --enable
 ```
 
-That is all. The first time the widget loads (and on every shell start after)
-it runs `bin/posse-setup --auto`, which:
+Omarchy asks you to confirm the clone (plugins run inside the shell, so read
+the code first if you like) and where in the bar to put it; the default is the
+centre, next to the clock. Then it is all automatic: the widget loads, and its
+setup runs. What you will see, in order:
 
-- installs the `grok-bot` package if it is missing (a floating terminal runs
-  `omarchy pkg add grok-bot`, so sudo can ask for your password) and starts it:
-  hidden if you have signed in before, on screen if not, so you can;
-- opens Muse and ChatGPT Dots hidden in your browser profile, warmed up for
-  the first click, and brings one on screen only if it landed on a sign-in page.
+1. **Grok Bot.** If the `grok-bot` package is not installed, a floating
+   terminal opens and runs `omarchy pkg add grok-bot`; type your password for
+   sudo. Grok Bot then starts: hidden if you have signed in on this machine
+   before, otherwise on screen so you can sign in.
+2. **Muse and ChatGPT Dots.** Each opens in your browser as an app window,
+   loads hidden, and is brought on screen only if it landed on a sign-in page.
+   Sign in; the window can stay open or be closed afterwards.
+3. **Notifications.** When chatgpt.com or muse.ai ask to send notifications,
+   allow it. That is how Oposse knows a web chat replied, and how it learns
+   your dot's name.
 
-Sign in to whatever it put on screen, then leave or close the window. Turn the
-automatic run off with `omarchy bar set telep.posse autoSetup false`; run it by
-hand any time with `~/.config/omarchy/plugins/telep.posse/bin/posse-setup`.
+Click the icon in the bar: the list shows Muse (by your persona's name and
+picture), Dots, and every Grok Bot, with the faces the app uses. Click a row
+and its chat drops down from the bar.
 
-The list shows who you are actually talking to: your Muse persona's name and
-picture, and your dot's name, are picked up from the browser (window titles,
-history, the site's own notifications). Override either if it guesses wrong:
-`omarchy bar set telep.posse museName Felipe`, `dotsName Sam`.
+This runs again on every shell start, so a Grok Bot you quit is back the next
+morning and the web apps are warm before the first click. `autoSetup false`
+turns that off (see Settings); run it by hand any time with
+`~/.config/omarchy/plugins/telep.posse/bin/posse-setup`.
 
 ### Requirements
 
-- Omarchy Quattro (the Quickshell-based shell, Hyprland with Lua config)
-- A Chromium-based default browser for the Muse and Dots web apps
-- `jq`, `python3`
+- Omarchy 4 (the Quickshell shell, Hyprland with the Lua config). Developed on 4.0.4.
+- A Chromium-based default browser (Brave, Chromium, Chrome, Vivaldi, Edge) for
+  the Muse and Dots web apps. Omarchy's default, Brave, is fine.
+- `jq`, `python3`: both ship with Omarchy.
 - Grok Bot: the `grok-bot` package from the Omarchy repo (installed for you),
-  or the AppImage in `~/Applications/grok-bot` / `~/.local/bin/grok-bot`
+  or the AppImage in `~/Applications/grok-bot` or `~/.local/bin/grok-bot`.
+- Accounts: Grok Bot (grok.com), Muse (muse.ai) and ChatGPT with a dot, for
+  whichever of the three you list in `services`. No Muse? `omarchy bar set
+  telep.posse services dots,grok`.
 
-**Allow notifications** for chatgpt.com and muse.ai when the browser asks. That is how Oposse knows a web chat has replied (and how it learns your dot's name).
+### Making it yours
+
+Everything is learned or defaulted, so a fresh install already matches a
+working setup. Three things are worth a look:
+
+```sh
+omarchy bar set telep.posse dotsName Sam                   # your dot's name, if it has not been learned yet
+omarchy bar set telep.posse dotsUrl https://chatgpt.com/dots/<id>   # open your dot directly, not the Dots home
+omarchy bar set telep.posse barPin web:dots                # which face sits in the bar when nothing is happening
+```
+
+The dot's name arrives with its first notification; set it if you do not want
+to wait. The pin can also be set from the panel: hover a row, click `pin`.
 
 ### Updating
 
@@ -51,6 +74,14 @@ omarchy plugin update telep.posse && omarchy restart shell
 
 The shell's hot reload restarts the plugin's scripts but keeps the widget it
 already compiled, so a changed `Widget.qml` only shows after a shell restart.
+
+### If something is off
+
+- A row does nothing when clicked: run `~/.config/omarchy/plugins/telep.posse/bin/posse-setup` in a terminal and read what it says.
+- The header says "Grok Bot not running": `grok-bot` from a terminal shows why.
+- Muse or Dots show the site's logo and name rather than yours: the browser
+  has not shown Oposse a page with the persona on it yet. Open the chat once.
+- A fresh look at everything: `omarchy restart shell`.
 
 ## How "waiting on you" works
 
