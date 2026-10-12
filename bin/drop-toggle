@@ -3,6 +3,8 @@
 # drop-toggle hide                                              tuck away whatever is down
 # drop-toggle popout <service> [url]                            into a normal tiled window
 # drop-toggle close <service|all>
+# drop-toggle prelaunch <service> [url]                         start it hidden, ready to drop
+# drop-toggle reveal <service>                                  bring a hidden one onto the screen, tiled
 #
 # Chats live in the hidden special workspace "drops". Showing one moves it onto
 # the monitor's visible workspace as a floating window at exactly the rectangle
@@ -12,11 +14,21 @@
 
 SERVICES=(muse dots grok)
 
+# Grok Bot ships as an Arch package on Omarchy (grok-bot, on PATH), and as an
+# AppImage elsewhere; take whichever is here. Empty = not installed.
+grok_bin() {
+  command -v grok-bot 2>/dev/null && return
+  for c in "$HOME/.local/bin/grok-bot" "$HOME/Applications/grok-bot/AppRun" "$HOME/Applications/grok-bot.AppImage"; do
+    [[ -x $c ]] && { echo "$c"; return; }
+  done
+  return 1
+}
+
 service() { # sets MATCH and LAUNCH for $1
   case $1 in
     muse) MATCH='muse\.ai' LAUNCH=(omarchy-launch-webapp "${2:-https://muse.ai/}") ;;
     dots) MATCH='chatgpt\.com__dots' LAUNCH=(omarchy-launch-webapp "${2:-https://chatgpt.com/dots/home}") ;;
-    grok) MATCH='grok-bot' LAUNCH=("$HOME/.local/bin/grok-bot") ;;
+    grok) MATCH='grok-bot' LAUNCH=("$(grok_bin || echo grok-bot)") ;;
     *) echo "drop-toggle: unknown service '$1'" >&2; exit 2 ;;
   esac
 }
@@ -40,6 +52,10 @@ hide() {
 # floating and unanimated. Re-registered each launch because a config reload
 # drops runtime rules.
 launch() {
+  if [[ $1 == grok ]] && ! grok_bin >/dev/null; then
+    echo "drop-toggle: Grok Bot is not installed (omarchy pkg add grok-bot)" >&2
+    return 1
+  fi
   hyprctl eval "hl.window_rule({ name = \"telep-drops-$1\", match = { initial_class = \".*${MATCH//\\/\\\\}.*\" }, tag = \"-default-opacity\", float = true, workspace = \"special:drops silent\", no_anim = true, border_size = 0, opacity = \"1 1\" })" >/dev/null
   setsid -f "${LAUNCH[@]}" >/dev/null 2>&1
   for _ in {1..100}; do # Electron apps (grok) take a few seconds
@@ -51,6 +67,7 @@ launch() {
 }
 
 case $1 in
+  --grok-bin) grok_bin ;;
   show)
     svc=$2 mon=$3 X=$4 Y=$5 W=$6 H=$7
     service "$svc" "$8"
@@ -67,6 +84,18 @@ case $1 in
     echo "$addr"
     ;;
   hide) hide ;;
+  prelaunch)
+    service "$2" "$3"
+    [[ -n $(win_of) ]] || launch "$2"
+    ;;
+  reveal)
+    service "$2"
+    win=$(win_of) || exit 1
+    [[ -n $win ]] || exit 1
+    addr=$(jq -r .address <<<"$win")
+    ws=$(hyprctl activeworkspace -j | jq -r .id)
+    hyprctl --batch "dispatch hl.dsp.window.move({ workspace = \"$ws\", window = \"address:$addr\" }) ; dispatch hl.dsp.window.float({ action = \"disable\", window = \"address:$addr\" }) ; dispatch hl.dsp.focus({ window = \"address:$addr\" })" >/dev/null
+    ;;
   popout)
     service "$2" "$3"
     win=$(win_of)
@@ -83,5 +112,5 @@ case $1 in
       [[ -n $addr ]] && dsp "hl.dsp.window.close({ window = \"address:$addr\" })"
     done
     ;;
-  *) sed -n '2,5p' "$0" >&2; exit 2 ;;
+  *) sed -n '2,7p' "$0" >&2; exit 2 ;;
 esac

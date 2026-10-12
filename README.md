@@ -13,26 +13,41 @@ Combines my earlier omusey and odotsy plugins, and builds on [omabot](https://gi
 
 ```sh
 omarchy plugin add https://github.com/Telep-IO/oposse.git --enable
-~/.config/omarchy/plugins/telep.posse/bin/posse-setup   # one-time sign-in
-omarchy restart shell
 ```
+
+That is all. The first time the widget loads (and on every shell start after)
+it runs `bin/posse-setup --auto`, which:
+
+- installs the `grok-bot` package if it is missing (a floating terminal runs
+  `omarchy pkg add grok-bot`, so sudo can ask for your password) and starts it:
+  hidden if you have signed in before, on screen if not, so you can;
+- opens Muse and ChatGPT Dots hidden in your browser profile, warmed up for
+  the first click, and brings one on screen only if it landed on a sign-in page.
+
+Sign in to whatever it put on screen, then leave or close the window. Turn the
+automatic run off with `omarchy bar set telep.posse autoSetup false`; run it by
+hand any time with `~/.config/omarchy/plugins/telep.posse/bin/posse-setup`.
+
+The list shows who you are actually talking to: your Muse persona's name and
+picture, and your dot's name, are picked up from the browser (window titles,
+history, the site's own notifications). Override either if it guesses wrong:
+`omarchy bar set telep.posse museName Felipe`, `dotsName Sam`.
 
 ### Requirements
 
 - Omarchy Quattro (the Quickshell-based shell, Hyprland with Lua config)
 - A Chromium-based default browser for the Muse and Dots web apps
 - `jq`, `python3`
-- Optional: [Grok Bot](https://grok.com) AppImage in `~/Applications/grok-bot` for the bot roster
+- Grok Bot: the `grok-bot` package from the Omarchy repo (installed for you),
+  or the AppImage in `~/Applications/grok-bot` / `~/.local/bin/grok-bot`
 
-`posse-setup` opens Muse and ChatGPT in your browser profile and starts Grok Bot, so you sign in to each once. It also installs Grok Bot's `.desktop` entry, which the AppImage never does.
-
-**Allow notifications** for chatgpt.com and muse.ai when the browser asks. That is how Oposse knows a web chat has replied.
+**Allow notifications** for chatgpt.com and muse.ai when the browser asks. That is how Oposse knows a web chat has replied (and how it learns your dot's name).
 
 ## How "waiting on you" works
 
 | Assistant | Signal |
 |---|---|
-| Grok Bot | The app's own `awaitingUserResponse` flag, read from `~/.config/Grok Bot` |
+| Grok Bot | The app's own `awaitingUserResponse` flag, read from `~/.config/Grok Bot`; "running" is the app's process |
 | Dots, Muse | A browser notification from the site; cleared when you focus its window |
 
 ## Use
@@ -52,8 +67,11 @@ omarchy restart shell
 ```sh
 omarchy bar set telep.posse services dots,grok        # which assistants to list
 omarchy bar set telep.posse dotsUrl https://chatgpt.com/dots/<id>
+omarchy bar set telep.posse dotsName Sam                  # names: found automatically, this overrides
+omarchy bar set telep.posse museName Felipe
 omarchy bar set telep.posse dotsAvatar ~/Pictures/dot.png
 omarchy bar set telep.posse museAvatar ~/Pictures/muse.png
+omarchy bar set telep.posse autoSetup false               # no setup run on shell start
 omarchy bar set telep.posse barFollow false             # bar always shows the pinned assistant
 omarchy bar set telep.posse width 560                 # dropdown px, 360-1200
 omarchy bar set telep.posse heightPercent 70          # dropdown % of screen, 30-90
@@ -81,10 +99,11 @@ Check the eye finder: `qml6 tests/eyes.qml` (exit 0 = pass).
 
 ```sh
 omarchy plugin remove telep.posse
-rm -rf ~/.local/state/omarchy/posse   # cached bot avatars
+rm -rf ~/.local/state/omarchy/posse   # cached avatars and learned names
+omarchy pkg remove grok-bot           # if you only had it for this
 ```
 
-Window rules are runtime-only and go away with the shell. `posse-setup` leaves Grok Bot's `.desktop` entry in `~/.local/share/applications`; that belongs to Grok Bot, so it stays.
+Window rules are runtime-only and go away with the shell.
 
 ## Credits
 

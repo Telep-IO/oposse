@@ -42,7 +42,10 @@
       "museEyes": "",
       "dotsEyes": "",
       "barFollow": "true",
-      "barPin": ""
+      "barPin": "",
+      "museName": "",
+      "dotsName": "",
+      "autoSetup": "true"
     },
     "schema": [
       {
@@ -64,6 +67,20 @@
         "type": "string",
         "label": "Muse URL (empty = muse.ai)",
         "defaultValue": ""
+      },
+      {
+        "key": "dotsName",
+        "type": "string",
+        "label": "Your dot's name (empty = found automatically)",
+        "defaultValue": "",
+        "description": "Learned from the browser (page titles, notifications). Set it here if it guesses wrong."
+      },
+      {
+        "key": "museName",
+        "type": "string",
+        "label": "Muse persona's name (empty = found automatically)",
+        "defaultValue": "",
+        "description": "Learned from the Muse window title. Set it here if it guesses wrong."
       },
       {
         "key": "dotsAvatar",
@@ -152,6 +169,13 @@
         "label": "Pinned assistant",
         "defaultValue": "",
         "description": "Set with the pin button on a row in the panel. Empty = the first web assistant (Muse or Dots)."
+      },
+      {
+        "key": "autoSetup",
+        "type": "boolean",
+        "label": "Set up on every shell start",
+        "defaultValue": "true",
+        "description": "Install Grok Bot if missing, start it, warm up Muse and Dots hidden, and open only what still needs a sign-in."
       }
     ]
   }

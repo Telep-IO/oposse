@@ -20,11 +20,15 @@
 # schemaVersion 4 - so every field is read defensively and a shape we do not
 # recognise degrades to "no bots" rather than crashing the widget.
 import base64
+import glob
 import json
 import os
 import re
+import shutil
+import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -47,8 +51,177 @@ WEB = {
 }
 BROWSERS = re.compile(r"brave|chrom|chrome|vivaldi|edge", re.I)
 web_state = {k: {"awaiting": False, "text": "", "ts": 0.0, "viewed": 0.0} for k in WEB}
+STARTED = time.time()  # a web assistant with no activity yet still sorts as current, not as forgotten
 web_lock = threading.Lock()
 web_version = [0]
+
+# Who you are talking to on each site: the persona's name and picture, so the
+# row says "Felipe" or "Sam" rather than the site. Nothing local states it, so
+# it is pieced together from what the browser leaves lying around, best source
+# first:
+#   1. --<svc>Name / <svc>Avatar settings (the widget passes them in)
+#   2. the web app window's title ("Chat — Felipe")
+#   3. the browser profile's History titles and Favicons (a page's icon for a
+#      Muse thread is the persona's picture, as a data URL)
+#   4. the summary of a site notification, when it looks like a name
+# Learned values are kept in ~/.local/state/omarchy/posse/identity.json so the
+# first snapshot after a restart already has them.
+IDENTITY = os.path.join(os.path.dirname(CACHE), "identity.json")
+TITLE_NAME = {
+    "muse": re.compile(r"^(?:\(\d+\)\s*)?Chat\s*[—–-]\s*(.+?)\s*$"),
+    "dots": re.compile(r"^(?:\(\d+\)\s*)?(?!ChatGPT$)(.+?)(?:\s*[|·—–-]\s*ChatGPT)?\s*$"),
+}
+PAGES = {"muse": "https://muse.ai/thread/%", "dots": "https://chatgpt.com/dots/%"}
+PROFILES = [
+    "~/.config/BraveSoftware/Brave-Browser/Default", "~/.config/chromium/Default",
+    "~/.config/google-chrome/Default", "~/.config/vivaldi/Default",
+    "~/.config/microsoft-edge/Default", "~/.config/brave/Default",
+]
+identity = {k: {"name": "", "avatar": ""} for k in WEB}
+identity_lock = threading.Lock()
+forced = {}  # from --museName etc.
+
+
+def load_identity():
+    try:
+        with open(IDENTITY) as f:
+            saved = json.load(f)
+        for k in WEB:
+            if isinstance(saved.get(k), dict):
+                identity[k].update({x: str(saved[k].get(x) or "") for x in ("name", "avatar")})
+    except (OSError, ValueError):
+        pass
+
+
+def save_identity():
+    try:
+        os.makedirs(os.path.dirname(IDENTITY), exist_ok=True)
+        tmp = IDENTITY + ".part"
+        with open(tmp, "w") as f:
+            json.dump(identity, f)
+        os.replace(tmp, IDENTITY)
+    except OSError:
+        pass
+
+
+def learn(key, name=None, avatar=None):
+    """Record a better name or picture; bumps the snapshot version on change."""
+    changed = False
+    with identity_lock:
+        if name and name != identity[key]["name"]:
+            identity[key]["name"] = name[:60]
+            changed = True
+        if avatar and avatar != identity[key]["avatar"]:
+            identity[key]["avatar"] = avatar
+            changed = True
+    if changed:
+        save_identity()
+        with web_lock:
+            web_version[0] += 1
+
+
+def name_from_title(key, title):
+    m = TITLE_NAME[key].match(title or "")
+    return m.group(1).strip() if m else ""
+
+
+def window_titles():
+    """service -> title of its web app window, for the ones that are open."""
+    try:
+        clients = json.loads(subprocess.run(["hyprctl", "clients", "-j"], capture_output=True,
+                                            text=True, timeout=2).stdout or "[]")
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return {}
+    out = {}
+    for key, web in WEB.items():
+        for c in clients:
+            if re.search(web["window"], c.get("initialClass") or ""):
+                out[key] = c.get("title") or ""
+                break
+    return out
+
+
+def profile_dir():
+    for p in PROFILES:
+        p = os.path.expanduser(p)
+        if os.path.isfile(os.path.join(p, "History")):
+            return p
+    return None
+
+
+def from_browser():
+    """(name, avatar path) per service from the browser profile. The databases
+    are locked while the browser runs, so they are copied first."""
+    prof = profile_dir()
+    if not prof:
+        return {}
+    out = {}
+    tmp = tempfile.mkdtemp(prefix="posse-")
+    try:
+        hist = fav = None
+        try:
+            shutil.copy(os.path.join(prof, "History"), os.path.join(tmp, "h"))
+            hist = sqlite3.connect(os.path.join(tmp, "h"))
+        except (OSError, sqlite3.Error):
+            pass
+        try:
+            shutil.copy(os.path.join(prof, "Favicons"), os.path.join(tmp, "f"))
+            fav = sqlite3.connect(os.path.join(tmp, "f"))
+        except (OSError, sqlite3.Error):
+            pass
+        for key, like in PAGES.items():
+            name = avatar = ""
+            if hist:
+                try:
+                    for (url, title) in hist.execute(
+                            "select url, title from urls where url like ? order by last_visit_time desc limit 20", (like,)):
+                        name = name_from_title(key, title)
+                        if name:
+                            break
+                except sqlite3.Error:
+                    pass
+            if fav:
+                try:
+                    row = fav.execute(
+                        "select f.url, b.image_data from icon_mapping im join favicons f on f.id = im.icon_id "
+                        "join favicon_bitmaps b on b.icon_id = f.id where im.page_url like ? and f.url like 'data:image/%' "
+                        "order by b.last_updated desc, b.width desc limit 1", (like,)).fetchone()
+                    if row and row[1]:
+                        os.makedirs(CACHE, exist_ok=True)
+                        dest = os.path.join(CACHE, key + "-persona.png")
+                        part = dest + ".part"
+                        data = bytes(row[1])
+                        if not os.path.exists(dest) or open(dest, "rb").read() != data:
+                            with open(part, "wb") as f:
+                                f.write(data)
+                            os.replace(part, dest)
+                        avatar = dest
+                except (sqlite3.Error, OSError):
+                    pass
+            out[key] = (name, avatar)
+        if hist:
+            hist.close()
+        if fav:
+            fav.close()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return out
+
+
+def refresh_identity():
+    """Runs on its own thread: the window title is cheap and checked often, the
+    browser databases are a few MB and read every couple of minutes."""
+    last_db = 0.0
+    while True:
+        titles = window_titles()
+        for key, title in titles.items():
+            learn(key, name=name_from_title(key, title))
+        if time.time() - last_db > 120:
+            last_db = time.time()
+            for key, (name, avatar) in from_browser().items():
+                # A title seen live beats a historical one; a picture is a picture.
+                learn(key, name=name if not titles.get(key) else None, avatar=avatar)
+        time.sleep(10)
 
 
 def follow_notifications():
@@ -85,6 +258,12 @@ def on_notify(lines):
             with web_lock:
                 web_state[key].update(awaiting=True, text=(body or summary)[:160], ts=time.time())
                 web_version[0] += 1
+            # A notification titled with a short plain name is the persona
+            # speaking; only trusted when nothing better is known.
+            if (summary and len(summary.split()) <= 3 and re.match(r"^[\w' .-]+$", summary)
+                    and not re.search(r"chatgpt|muse|new message|openai|meta", summary, re.I)
+                    and not identity[key]["name"]):
+                learn(key, name=summary.strip())
             return
 
 
@@ -107,17 +286,23 @@ def clear_focused():
 
 def web_bots():
     out = []
+    with identity_lock:
+        who = {k: dict(identity[k]) for k in WEB}
     with web_lock:
         for key, web in WEB.items():
             st = web_state[key]
+            name = forced.get(key + "Name") or who[key]["name"] or web["name"]
+            avatar = forced.get(key + "Avatar") or who[key]["avatar"] or os.path.join(ICONS, key + ".png")
+            # The persona's name on the row, the site as its subtitle; when the
+            # name is still the site's, the subtitle says which company.
             out.append({
-                "id": "web:" + key, "service": key, "name": web["name"], "title": web["title"],
+                "id": "web:" + key, "service": key, "name": name, "title": web["title"],
                 "description": "", "shape": "squircle", "color": None, "hex": None,
-                "avatar": os.path.join(ICONS, key + ".png"),
+                "avatar": avatar,
                 "is_group": False, "members": 0, "unread": 0,
                 "awaiting": st["awaiting"], "working": False, "working_since_ts": 0.0,
                 "muted": False, "last_text": st["text"],
-                "last_activity_ts": st["ts"], "last_viewed_ts": st["viewed"],
+                "last_activity_ts": st["ts"] or st["viewed"] or STARTED, "last_viewed_ts": st["viewed"],
                 "focused": False, "pinned": False,
             })
     return out
@@ -263,15 +448,37 @@ def avatars(index):
     return out
 
 
+def app_process_running():
+    """Grok Bot 0.68 no longer keeps the session marker, so look for the main
+    process itself: an executable named grok-bot whose command line carries no
+    --type= helper flag (Electron rewrites argv as one space-joined string, so
+    it is searched, not split)."""
+    try:
+        for pid in os.listdir("/proc"):
+            if not pid.isdigit():
+                continue
+            try:
+                exe = os.path.basename(os.readlink("/proc/%s/exe" % pid))
+                with open("/proc/%s/cmdline" % pid, "rb") as f:
+                    cmd = f.read().replace(b"\0", b" ")
+            except OSError:
+                continue
+            if exe == "grok-bot" and b"--type=" not in cmd:
+                return True
+    except OSError:
+        pass
+    return False
+
+
 def marker():
     try:
         with open(MARKER) as f:
             data = json.load(f)
     except (OSError, ValueError):
-        return {"running": False}
+        return {"running": app_process_running()}
     alive = data.get("aliveAtMs", 0) / 1000.0
     return {
-        "running": (time.time() - alive) < 120,
+        "running": (time.time() - alive) < 120 or app_process_running(),
         "version": data.get("appVersion"),
         "pid": data.get("pid"),
         "started_ts": (data.get("startedAtMs") or 0) / 1000.0,
@@ -351,7 +558,6 @@ def snapshot(index):
 
 
 def main():
-    threading.Thread(target=follow_notifications, daemon=True).start()
     args = sys.argv[1:]
     interval = 2.0
     if "--interval" in args:
@@ -359,6 +565,12 @@ def main():
             interval = max(0.5, float(args[args.index("--interval") + 1]))
         except (IndexError, ValueError):
             pass
+    for i, a in enumerate(args):   # --museName Felipe, --dotsAvatar ~/x.png ...
+        if a.startswith("--") and a[2:] in ("museName", "dotsName", "museAvatar", "dotsAvatar") and i + 1 < len(args) and args[i + 1]:
+            forced[a[2:]] = os.path.expanduser(args[i + 1])
+    load_identity()
+    threading.Thread(target=follow_notifications, daemon=True).start()
+    threading.Thread(target=refresh_identity, daemon=True).start()
 
     last_signature = None
     last_emit = 0.0

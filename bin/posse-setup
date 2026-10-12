@@ -1,25 +1,101 @@
 #!/bin/bash
-# posse-setup: one-time sign-in for every service, run after installing.
+# posse-setup: get every assistant installed, running and signed in.
 #
-# Muse and Dots are web apps in your default browser profile, so signing in here
-# is the same session the dropdown uses. Grok Bot is a desktop app with its own
-# login; this also installs its .desktop entry (the AppImage never does), which
-# is what lets launchers and omabot start it without a terminal.
+#   posse-setup          interactive: open each sign-in, report what it did
+#   posse-setup --auto   from the widget on every shell start: quiet, only
+#                        surfaces a window when something needs you
+#
+# What it does, per service in the `services` setting:
+#   grok  install the grok-bot package if missing (a floating terminal runs
+#         `omarchy pkg add grok-bot`, so sudo can ask for a password), then
+#         start the app. Already signed in: it starts hidden, ready to drop
+#         down. Never signed in on this machine: it starts on screen so you can.
+#   muse  open the web app hidden; if the page is a sign-in page, bring it on
+#   dots  screen. Signed in: it stays hidden, warmed up for the first click.
+#
+# Muse and Dots live in your default browser profile, so signing in here is the
+# same session the dropdown uses. Grok Bot has its own login inside the app.
 
-apps=$HOME/.local/share/applications
-grok=$HOME/Applications/grok-bot
+here=$(dirname "$(realpath "$0")")
+toggle=$here/drop-toggle
+state=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/posse
+mkdir -p "$state"
+auto=0; [[ $1 == --auto ]] && auto=1
 
-if [[ -x $grok/AppRun ]]; then
-  mkdir -p "$apps"
-  sed "s|^Exec=AppRun|Exec=$grok/AppRun|; s|^Icon=grok-bot|Icon=$grok/grok-bot.png|" \
-    "$grok/grok-bot.desktop" >"$apps/grok-bot.desktop"
-  echo "Installed $apps/grok-bot.desktop"
-  setsid -f "$grok/AppRun" --no-sandbox >/dev/null 2>&1
-else
-  echo "Grok Bot not found in $grok, skipping (install the AppImage there to use service=grok)"
-fi
+log() { (( auto )) && echo "posse-setup: $*" >&2 || echo "$*"; }
 
-setsid -f omarchy-launch-webapp https://muse.ai/ >/dev/null 2>&1
-setsid -f omarchy-launch-webapp https://chatgpt.com/ >/dev/null 2>&1
+# One run at a time: the widget lives once per monitor and each copy asks.
+exec 9>"$state/setup.lock"
+flock -n 9 || exit 0
 
-echo "Sign in to each window that opened, then close them. Your bar icons will drop them down from now on."
+# The widget's settings are its bar entry in shell.json.
+setting() { jq -r --arg k "$1" '[.bar.layout[][]?|select(.id=="telep.posse")][0][$k] // empty' \
+  "${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/shell.json" 2>/dev/null; }
+services=$(setting services); [[ -n $services ]] || services=muse,dots,grok
+services=${services//,/ }
+
+grok_installed() { bash "$toggle" --grok-bin >/dev/null 2>&1; }
+grok_running() { hyprctl clients -j | jq -e '.[]|select(.initialClass|test("grok-bot"))' >/dev/null 2>&1; }
+grok_onboarded() { ls "$HOME/.config/Grok Bot/sand-client-persistence"/*.blob >/dev/null 2>&1; }
+
+# The webapp's current window title; the sign-in pages give themselves away.
+web_title() { # $1 service
+  local re; case $1 in muse) re='muse\.ai' ;; dots) re='chatgpt\.com__dots' ;; esac
+  hyprctl clients -j | jq -r --arg re "$re" '[.[]|select(.initialClass|test($re))][0].title // empty'
+}
+# Signed in, by window title. Muse names the persona ("Chat — Felipe") once
+# the app has loaded; the landing and sign-in pages are just "Muse". Dots says
+# "ChatGPT" either way, so only an obvious sign-in page counts as not.
+signed_in() { # $1 service, $2 title
+  case $1 in
+    muse) [[ $2 =~ ^(\([0-9]+\)\ )?Chat ]] ;;
+    dots) [[ -n $2 ]] && ! [[ $2 =~ [Ll]og\ ?[Ii]n|[Ss]ign\ ?([Ii]n|[Uu]p)|[Aa]uth|[Ww]elcome ]] ;;
+  esac
+}
+
+setup_grok() {
+  if ! grok_installed; then
+    if (( auto )); then
+      log "installing grok-bot"
+      omarchy-launch-floating-terminal-with-presentation "omarchy pkg add grok-bot"
+      for _ in $(seq 1 600); do grok_installed && break; sleep 1; done   # up to 10 min at the prompt
+    else
+      omarchy pkg add grok-bot
+    fi
+    grok_installed || { log "Grok Bot not installed; skipping (omarchy pkg add grok-bot)"; return; }
+  fi
+  if grok_running; then log "Grok Bot already running"; return; fi
+  if grok_onboarded; then
+    "$toggle" prelaunch grok && log "Grok Bot started (hidden)"
+  else
+    "$toggle" prelaunch grok && "$toggle" reveal grok && log "Grok Bot opened: sign in there"
+  fi
+}
+
+setup_web() { # $1 service
+  local svc=$1 url title
+  url=$(setting "${svc}Url")
+  "$toggle" prelaunch "$svc" "$url" || { log "$svc: could not open the web app (is a Chromium-based browser the default?)"; return; }
+  # Give the page time to load and settle on its signed-in title.
+  for i in $(seq 1 120); do title=$(web_title "$svc"); signed_in "$svc" "$title" && (( i > 12 )) && break; sleep 0.25; done
+  if signed_in "$svc" "$title"; then
+    log "$svc ready (hidden): $title"
+  else
+    "$toggle" reveal "$svc" && log "$svc opened: sign in there (title: ${title:-none})"
+  fi
+}
+
+for svc in $services; do
+  case $svc in
+    grok) setup_grok ;;
+    muse|dots) setup_web "$svc" ;;
+  esac
+done
+
+(( auto )) || cat <<MSG
+
+Done. Anything that needed a sign-in is on screen; sign in and leave the window
+(or close it). The bar icon drops each chat down from now on.
+Allow notifications for chatgpt.com and muse.ai when the browser asks: that is
+how Oposse knows a web chat replied.
+MSG
