@@ -455,6 +455,8 @@ Panel {
     }
     return out
   }
+  // Chat text, names and titles go through here. Callers draw them as plain
+  // text so Qt does not treat an image tag in a message as HTML and fetch it.
   function label(text) { text = String(text || ""); return scrub ? noise(text) : text }
 
   function moveCursor(delta) {
@@ -481,10 +483,22 @@ Panel {
     if (!snap || vertical || barMetric !== "count") return ""
     return wantingCount > 0 ? String(wantingCount) : ""
   }
+  // The bar draws this in its own Text and leaves textFormat at the default.
+  // Qt only sniffs the first line for a tag. When that line has "<", escape
+  // the whole string: AutoText parses the entities back into the same
+  // characters and does not request an image URL. Anything else is unchanged,
+  // so an ampersand stays an ampersand.
+  function tooltipText(text) {
+    var s = String(text || "")
+    var nl = s.indexOf("\n")
+    var lt = s.indexOf("<")
+    if (lt < 0 || (nl >= 0 && lt > nl)) return s
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  }
   readonly property string barTooltip: {
     if (!snap) return "Assistants"
     if (wanting.length === 0) return "Assistants · nobody waiting"
-    return wanting.map(function(b) { return b.name }).join(", ") + " waiting on you"
+    return tooltipText(wanting.map(function(b) { return b.name }).join(", ") + " waiting on you")
   }
 
   implicitWidth: row.implicitWidth
@@ -770,6 +784,7 @@ Panel {
                   return "ASSISTANTS" + (root.services.indexOf("grok") < 0 ? ""
                     : root.app.running ? " · Grok Bot " + (root.app.version || "") : " · Grok Bot not running")
                 }
+                textFormat: Text.PlainText
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -843,6 +858,7 @@ Panel {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: Style.space(4)
                 text: root.label(modelData.name).toUpperCase() + "  " + (modelData.count || "")
+                textFormat: Text.PlainText
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -908,6 +924,7 @@ Panel {
                       width: parent.width
                       Text {
                         text: modelData.kind === "bot" ? root.label(modelData.bot.name) : ""
+                        textFormat: Text.PlainText
                         color: modelData.kind === "bot" && modelData.bot.focused ? root.accent : root.fg
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.bodySmall
@@ -927,6 +944,7 @@ Panel {
                           ? (modelData.bot.is_group ? "group of " + modelData.bot.members
                                                     : root.label(modelData.bot.title))
                           : ""
+                        textFormat: Text.PlainText
                         color: root.dim
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.caption
@@ -940,6 +958,7 @@ Panel {
                       text: modelData.kind === "bot"
                         ? (modelData.bot.working ? "thinking…" : root.label(modelData.bot.last_text))
                         : ""
+                      textFormat: Text.PlainText
                       // Full foreground for the ones waiting on you, dimmed for
                       // the rest: weight carries it, so nothing has to shout.
                       color: modelData.kind === "bot" && modelData.bot.awaiting ? root.fg
