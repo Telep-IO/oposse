@@ -494,16 +494,19 @@ Panel {
   // What the bar draws beside the logo. Nothing waiting means nothing beside
   // it - the logo alone is still the widget, and still opens the panel.
   readonly property bool vertical: !!(bar && bar.vertical)
-  // One avatar: whoever waits longest when following, else the pinned one
-  // (default: the first web assistant, so Muse/Dots sit there out of the box).
+  // One avatar: when following, whoever has asked you something and is
+  // waiting on the answer (not merely unread: with a busy roster that would
+  // never let the pin through), else the pinned one (default: the first web
+  // assistant, so Muse/Dots sit there out of the box).
   readonly property bool barFollow: String(setting("barFollow", "true")) !== "false"
+  readonly property var needing: wanting.filter(function(b) { return b.awaiting })
   readonly property var pinnedBot: {
     var id = String(setting("barPin", ""))
     return bots.filter(function(b) { return b.id === id })[0]
       || bots.filter(function(b) { return b.service !== "grok" })[0] || null
   }
   readonly property var barAvatars: (!snap || vertical || barMetric !== "avatars") ? []
-    : (barFollow && wanting.length > 0) ? [wanting[0]] : pinnedBot ? [pinnedBot] : []
+    : (barFollow && needing.length > 0) ? [needing[0]] : pinnedBot ? [pinnedBot] : []
   function isPinned(b) { return !!(b && pinnedBot && pinnedBot.id === b.id) }
   function pinBot(b) { Quickshell.execDetached(["omarchy", "bar", "set", "telep.posse", "barPin", b.id]) }
   function toggleFollow() {
