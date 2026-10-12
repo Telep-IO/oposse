@@ -25,8 +25,10 @@ auto=0; [[ $1 == --auto ]] && auto=1
 log() { (( auto )) && echo "posse-setup: $*" >&2 || echo "$*"; }
 
 # One run at a time: the widget lives once per monitor and each copy asks.
+# Long-lived children (the apps) must not inherit fd 9, or the lock outlives
+# this run; drop-toggle closes it when launching.
 exec 9>"$state/setup.lock"
-flock -n 9 || exit 0
+flock -n 9 || { log "another setup is running"; exit 0; }
 
 # The widget's settings are its bar entry in shell.json.
 setting() { jq -r --arg k "$1" '[.bar.layout[][]?|select(.id=="telep.posse")][0][$k] // empty' \
@@ -43,13 +45,21 @@ web_title() { # $1 service
   local re; case $1 in muse) re='muse\.ai' ;; dots) re='chatgpt\.com__dots' ;; esac
   hyprctl clients -j | jq -r --arg re "$re" '[.[]|select(.initialClass|test($re))][0].title // empty'
 }
-# Signed in, by window title. Muse names the persona ("Chat — Felipe") once
-# the app has loaded; the landing and sign-in pages are just "Muse". Dots says
-# "ChatGPT" either way, so only an obvious sign-in page counts as not.
-signed_in() { # $1 service, $2 title
+# Where a web app stands, by window title: in (signed in and loaded), out (a
+# sign-in or landing page), or loading. Muse names the persona once loaded
+# ("Chat — Felipe"); signed out it is the landing page ("Muse — Your Personal
+# AI Agent"); while loading it is just "Muse". Dots says "ChatGPT" loaded or
+# loading, so only an obvious sign-in page counts as out.
+web_state() { # $1 service, $2 title
   case $1 in
-    muse) [[ $2 =~ ^(\([0-9]+\)\ )?Chat ]] ;;
-    dots) [[ -n $2 ]] && ! [[ $2 =~ [Ll]og\ ?[Ii]n|[Ss]ign\ ?([Ii]n|[Uu]p)|[Aa]uth|[Ww]elcome ]] ;;
+    muse)
+      [[ $2 =~ ^(\([0-9]+\)\ )?Chat ]] && { echo in; return; }
+      [[ $2 =~ Personal|[Ll]og\ ?[Ii]n|[Ss]ign\ ?([Ii]n|[Uu]p)|[Aa]uth|[Ww]elcome|Platform ]] && { echo out; return; }
+      echo loading ;;
+    dots)
+      [[ $2 =~ [Ll]og\ ?[Ii]n|[Ss]ign\ ?([Ii]n|[Uu]p)|[Aa]uth|[Ww]elcome|OpenAI ]] && { echo out; return; }
+      [[ $2 == *ChatGPT* ]] && { echo in; return; }
+      echo loading ;;
   esac
 }
 
@@ -57,7 +67,7 @@ setup_grok() {
   if ! grok_installed; then
     if (( auto )); then
       log "installing grok-bot"
-      omarchy-launch-floating-terminal-with-presentation "omarchy pkg add grok-bot"
+      omarchy-launch-floating-terminal-with-presentation "omarchy pkg add grok-bot" 9>&-
       for _ in $(seq 1 600); do grok_installed && break; sleep 1; done   # up to 10 min at the prompt
     else
       omarchy pkg add grok-bot
@@ -76,14 +86,20 @@ setup_web() { # $1 service
   local svc=$1 url title
   url=$(setting "${svc}Url")
   "$toggle" prelaunch "$svc" "$url" || { log "$svc: could not open the web app (is a Chromium-based browser the default?)"; return; }
-  # Give the page time to load and settle on its signed-in title. A hidden
-  # window gets throttled by the browser, so this can take a while.
-  for i in $(seq 1 240); do title=$(web_title "$svc"); signed_in "$svc" "$title" && (( i > 12 )) && break; sleep 0.25; done
-  if signed_in "$svc" "$title"; then
-    log "$svc ready (hidden): $title"
-  else
-    "$toggle" reveal "$svc" && log "$svc opened: sign in there (title: ${title:-none})"
-  fi
+  # Give the page time to load and settle. A hidden window gets throttled by
+  # the browser, so this can take a while; still loading at the end is left
+  # hidden rather than shoved on screen (the next click shows it anyway).
+  local st=loading
+  for i in $(seq 1 240); do
+    title=$(web_title "$svc"); st=$(web_state "$svc" "$title")
+    [[ $st != loading ]] && (( i > 12 )) && break
+    sleep 0.25
+  done
+  case $st in
+    in) log "$svc ready (hidden): $title" ;;
+    out) "$toggle" reveal "$svc" && log "$svc opened: sign in there (title: ${title:-none})" ;;
+    *) log "$svc still loading after 60s, left hidden (title: ${title:-none})" ;;
+  esac
 }
 
 for svc in $services; do

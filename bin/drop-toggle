@@ -57,7 +57,7 @@ launch() {
     return 1
   fi
   hyprctl eval "hl.window_rule({ name = \"telep-drops-$1\", match = { initial_class = \".*${MATCH//\\/\\\\}.*\" }, tag = \"-default-opacity\", float = true, workspace = \"special:drops silent\", no_anim = true, border_size = 0, opacity = \"1 1\" })" >/dev/null
-  setsid -f "${LAUNCH[@]}" >/dev/null 2>&1
+  setsid -f "${LAUNCH[@]}" >/dev/null 2>&1 9>&-   # 9: posse-setup's lock, not for the app to inherit
   for _ in {1..100}; do # Electron apps (grok) take a few seconds
     win=$(win_of)
     [[ -n $win ]] && return
