@@ -494,19 +494,33 @@ Panel {
   // What the bar draws beside the logo. Nothing waiting means nothing beside
   // it - the logo alone is still the widget, and still opens the panel.
   readonly property bool vertical: !!(bar && bar.vertical)
-  // One avatar: when following, whoever has asked you something and is
-  // waiting on the answer (not merely unread: with a busy roster that would
-  // never let the pin through), else the pinned one (default: the first web
-  // assistant, so Muse/Dots sit there out of the box).
+  // A short ranked row beside the mark, capped at barMax (default 3), so a
+  // change in the bar means something happened:
+  //   1. whoever has asked you something and is waiting on the answer
+  //   2. whoever answered most recently that you have not read yet
+  //   3. the pinned assistant, if a spot is left (default: the first web
+  //      assistant, so Muse/Dots sit there out of the box)
+  // barFollow=false: the pinned one alone, always.
   readonly property bool barFollow: String(setting("barFollow", "true")) !== "false"
+  readonly property int barMax: Math.max(1, Math.min(6, Number(setting("barMax", 3)) || 3))
   readonly property var needing: wanting.filter(function(b) { return b.awaiting })
   readonly property var pinnedBot: {
     var id = String(setting("barPin", ""))
     return bots.filter(function(b) { return b.id === id })[0]
       || bots.filter(function(b) { return b.service !== "grok" })[0] || null
   }
-  readonly property var barAvatars: (!snap || vertical || barMetric !== "avatars") ? []
-    : (barFollow && needing.length > 0) ? [needing[0]] : pinnedBot ? [pinnedBot] : []
+  readonly property var barAvatars: {
+    if (!snap || vertical || barMetric !== "avatars") return []
+    if (!barFollow) return pinnedBot ? [pinnedBot] : []
+    var out = [], seen = ({})
+    var take = function(b) { if (b && !seen[b.id] && out.length < barMax) { seen[b.id] = true; out.push(b) } }
+    needing.forEach(take)
+    bots.filter(function(b) { return !b.awaiting && b.unread > 0 })
+      .sort(function(x, y) { return (y.last_activity_ts || 0) - (x.last_activity_ts || 0) })
+      .forEach(take)
+    take(pinnedBot)
+    return out
+  }
   function isPinned(b) { return !!(b && pinnedBot && pinnedBot.id === b.id) }
   function pinBot(b) { Quickshell.execDetached(["omarchy", "bar", "set", "telep.posse", "barPin", b.id]) }
   function toggleFollow() {

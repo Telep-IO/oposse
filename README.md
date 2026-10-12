@@ -2,7 +2,7 @@
 
 **All your personal assistants behind one icon in the [Omarchy](https://omarchy.org) bar:** Muse, ChatGPT Dots and your Grok Bot roster.
 
-- One avatar sits next to the icon: whoever has asked you something and is waiting on the answer, otherwise your pinned assistant (Muse or Dots by default). Unread alone does not take the spot. The pinned one is tagged `📌 in bar` in the list; hover another and click `pin` to move it; the `bar:` toggle in the panel header switches between "who's waiting" and "pinned only".
+- Beside the icon, a short ranked row of faces (three at most): whoever has asked you something and is waiting on the answer, then whoever answered most recently that you have not read, then your pinned assistant (Muse or Dots by default) if a spot is left. A quiet day is just the pin; a change in the row means something happened. The pinned one is tagged `📌 in bar` in the list; hover another and click `pin` to move it; the `bar:` toggle in the panel header switches between "who's waiting" and "pinned only".
 - Click the icon for the list of every assistant. Click one and the list turns into its chat, in place.
 - Click anywhere off the chat to tuck it away. The tabs under it: `‹ all` (back to the list), `pop out` (a normal tiled window), `✕ close` (quit it).
 - Hover a row for pop out / close on that assistant; `✕ close all` in the list header closes every one.
@@ -81,7 +81,8 @@ omarchy bar set telep.posse museName Felipe
 omarchy bar set telep.posse dotsAvatar ~/Pictures/dot.png
 omarchy bar set telep.posse museAvatar ~/Pictures/muse.png
 omarchy bar set telep.posse autoSetup false               # no setup run on shell start
-omarchy bar set telep.posse barFollow false             # bar always shows the pinned assistant, even when one is waiting on you
+omarchy bar set telep.posse barMax 5                    # faces beside the icon, 1-6
+omarchy bar set telep.posse barFollow false             # bar always shows the pinned assistant alone
 omarchy bar set telep.posse width 560                 # dropdown px, 360-1200
 omarchy bar set telep.posse heightPercent 70          # dropdown % of screen, 30-90
 ```

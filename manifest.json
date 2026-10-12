@@ -45,7 +45,8 @@
       "barPin": "",
       "museName": "",
       "dotsName": "",
-      "autoSetup": "true"
+      "autoSetup": "true",
+      "barMax": 3
     },
     "schema": [
       {
@@ -136,7 +137,7 @@
           "none"
         ],
         "defaultValue": "avatars",
-        "description": "avatars = one assistant's avatar (see below); count = how many are waiting on you; none = the icon alone."
+        "description": "avatars = a short ranked row of faces (see barMax); count = how many are waiting on you; none = the icon alone."
       },
       {
         "key": "ordering",
@@ -157,11 +158,21 @@
         "defaultValue": "true"
       },
       {
+        "key": "barMax",
+        "type": "integer",
+        "label": "Faces beside the icon (max)",
+        "min": 1,
+        "max": 6,
+        "step": 1,
+        "defaultValue": 3,
+        "description": "Ranked: waiting on your reply, then unread by recency, then the pinned assistant."
+      },
+      {
         "key": "barFollow",
         "type": "boolean",
-        "label": "Show whoever is waiting on you",
+        "label": "Show who needs you",
         "defaultValue": "true",
-        "description": "On: the bar shows the assistant waiting on you longest, and the pinned one otherwise. Off: always the pinned one. Also the 'bar:' toggle in the panel header."
+        "description": "On: beside the icon, up to barMax faces: whoever waits on your reply, then unread by recency, then the pinned one. Off: always just the pinned one. Also the 'bar:' toggle in the panel header."
       },
       {
         "key": "barPin",
