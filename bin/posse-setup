@@ -86,6 +86,7 @@ setup_web() { # $1 service
   local svc=$1 url title
   url=$(setting "${svc}Url")
   "$toggle" prelaunch "$svc" "$url" || { log "$svc: could not open the web app (is a Chromium-based browser the default?)"; return; }
+  "$toggle" park "$svc"   # mapped offscreen, so the page actually loads
   # Give the page time to load and settle. A hidden window gets throttled by
   # the browser, so this can take a while; still loading at the end is left
   # hidden rather than shoved on screen (the next click shows it anyway).
@@ -96,9 +97,9 @@ setup_web() { # $1 service
     sleep 0.25
   done
   case $st in
-    in) log "$svc ready (hidden): $title" ;;
+    in) "$toggle" tuck "$svc"; log "$svc ready (hidden): $title" ;;
     out) "$toggle" reveal "$svc" && log "$svc opened: sign in there (title: ${title:-none})" ;;
-    *) log "$svc still loading after 60s, left hidden (title: ${title:-none})" ;;
+    *) "$toggle" tuck "$svc"; log "$svc still loading after 60s, left hidden (title: ${title:-none})" ;;
   esac
 }
 

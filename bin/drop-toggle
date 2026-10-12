@@ -5,6 +5,8 @@
 # drop-toggle close <service|all>
 # drop-toggle prelaunch <service> [url]                         start it hidden, ready to drop
 # drop-toggle reveal <service>                                  bring a hidden one onto the screen, tiled
+# drop-toggle park <service>                                    hidden but mapped (floating, far offscreen)
+# drop-toggle tuck <service>                                    back into special:drops
 #
 # Chats live in the hidden special workspace "drops". Showing one moves it onto
 # the monitor's visible workspace as a floating window at exactly the rectangle
@@ -88,6 +90,21 @@ case $1 in
     service "$2" "$3"
     [[ -n $(win_of) ]] || launch "$2"
     ;;
+  # A window on an unshown special workspace is unmapped, and Chromium does
+  # not run the page in an unmapped window: the web app never finishes loading
+  # there. Parking it mapped but far offscreen lets it load; tuck it after.
+  park)
+    service "$2"
+    win=$(win_of); [[ -n $win ]] || exit 1
+    addr=$(jq -r .address <<<"$win")
+    ws=$(hyprctl activeworkspace -j | jq -r .id)
+    hyprctl --batch "dispatch hl.dsp.window.float({ action = \"enable\", window = \"address:$addr\" }) ; dispatch hl.dsp.window.move({ workspace = \"$ws\", follow = false, window = \"address:$addr\" }) ; dispatch hl.dsp.window.move({ x = 20000, y = 20000, window = \"address:$addr\" })" >/dev/null
+    ;;
+  tuck)
+    service "$2"
+    addr=$(win_of | jq -r '.address // empty'); [[ -n $addr ]] || exit 1
+    dsp "hl.dsp.window.move({ workspace = \"special:drops\", follow = false, window = \"address:$addr\" })"
+    ;;
   reveal)
     service "$2"
     win=$(win_of) || exit 1
@@ -112,5 +129,5 @@ case $1 in
       [[ -n $addr ]] && dsp "hl.dsp.window.close({ window = \"address:$addr\" })"
     done
     ;;
-  *) sed -n '2,7p' "$0" >&2; exit 2 ;;
+  *) sed -n '2,9p' "$0" >&2; exit 2 ;;
 esac
