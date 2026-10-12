@@ -4,7 +4,8 @@
 #
 #   stdout  {"generated_ts":…, "counts":{…}, "sections":[…], "bots":[…]}
 #   cache   ~/.local/state/omarchy/posse/avatars/<version>.png for bots that
-#           wear a picture instead of a shape
+#           wear a picture instead of a shape. The posse directory is mode
+#           0700 and every file under it is mode 0600, whatever the umask is.
 #   args    --interval N   seconds between checks (default 2)
 #
 # Grok Bot parsing is from omabot (github.com/njpatel/omabot, Apache-2.0, see
@@ -67,6 +68,7 @@ web_version = [0]
 # Learned values are kept in ~/.local/state/omarchy/posse/identity.json so the
 # first snapshot after a restart already has them.
 IDENTITY = os.path.join(os.path.dirname(CACHE), "identity.json")
+STATE_DIR = os.path.dirname(CACHE)
 TITLE_NAME = {
     "muse": re.compile(r"^(?:\(\d+\)\s*)?Chat\s*[—–-]\s*(.+?)\s*$"),
     "dots": re.compile(r"^(?:\(\d+\)\s*)?(?!ChatGPT$)(.+?)(?:\s*[|·—–-]\s*ChatGPT)?\s*$"),
@@ -82,6 +84,106 @@ identity_lock = threading.Lock()
 forced = {}  # from --museName etc.
 
 
+def ensure_private_dir(path):
+    """Create `path` (under the posse state dir) as mode 0700.
+
+    os.mkdir applies the mode in the creating syscall and the umask can only
+    clear bits, so the directory is never created group- or world-accessible.
+    An existing directory is chmodded: an older install left these at 0755.
+    Parents above the posse directory keep the user's normal umask.
+    """
+    path = os.path.abspath(path)
+    state = os.path.abspath(STATE_DIR)
+    if path != state and not path.startswith(state + os.sep):
+        raise OSError(path)
+    parent = os.path.dirname(path)
+    if path == state:
+        if not os.path.isdir(parent):
+            os.makedirs(parent, exist_ok=True)
+    elif not os.path.isdir(parent):
+        ensure_private_dir(parent)
+    try:
+        os.mkdir(path, 0o700)
+    except FileExistsError:
+        pass
+    if not os.path.isdir(path):
+        raise OSError(path)
+    os.chmod(path, 0o700)
+
+
+def tighten_state():
+    """Force 0700 directories and 0600 files on posse state already on disk."""
+    root = STATE_DIR
+    if not os.path.isdir(root) or os.path.islink(root):
+        return
+    os.chmod(root, 0o700)
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        kept = []
+        for name in dirnames:
+            path = os.path.join(dirpath, name)
+            if os.path.islink(path):
+                continue
+            kept.append(name)
+            try:
+                os.chmod(path, 0o700)
+            except OSError:
+                pass
+        dirnames[:] = kept
+        for name in filenames:
+            path = os.path.join(dirpath, name)
+            if os.path.islink(path):
+                continue
+            try:
+                os.chmod(path, 0o600)
+            except OSError:
+                pass
+
+
+def atomic_write(path, write, binary=True):
+    """Replace `path` by renaming a same-directory temp file created mode 0600.
+
+    The temp inode is owner-only from the moment it exists (mkstemp uses 0600,
+    which the umask cannot loosen), and os.replace swaps it into place, so the
+    destination is never briefly group- or world-readable.
+    """
+    ensure_private_dir(os.path.dirname(path))
+    if os.path.isfile(path) and not os.path.islink(path):
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+    fd, tmp = tempfile.mkstemp(prefix=".posse-", suffix=".part", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "wb" if binary else "w") as handle:
+            write(handle)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def copy_private(src, dst):
+    """Copy `src` onto a new file created mode 0600. The source mode is not
+    kept: a browser database is often mode 0644, and the copy must not be."""
+    fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as out, open(src, "rb") as inp:
+            shutil.copyfileobj(inp, out)
+    except BaseException:
+        try:
+            os.unlink(dst)
+        except OSError:
+            pass
+        raise
+
+
 def load_identity():
     try:
         with open(IDENTITY) as f:
@@ -95,11 +197,9 @@ def load_identity():
 
 def save_identity():
     try:
-        os.makedirs(os.path.dirname(IDENTITY), exist_ok=True)
-        tmp = IDENTITY + ".part"
-        with open(tmp, "w") as f:
-            json.dump(identity, f)
-        os.replace(tmp, IDENTITY)
+        def write(handle):
+            json.dump(identity, handle)
+        atomic_write(IDENTITY, write, binary=False)
     except OSError:
         pass
 
@@ -156,16 +256,21 @@ def from_browser():
     if not prof:
         return {}
     out = {}
+    # mkdtemp is mode 0700 (the umask cannot loosen it). Copies are created
+    # 0600 rather than inheriting the browser file's mode. SQLite gives a WAL
+    # or shared-memory sidecar the same mode as the database it opened, so
+    # those stay owner-only too.
     tmp = tempfile.mkdtemp(prefix="posse-")
     try:
+        os.chmod(tmp, 0o700)
         hist = fav = None
         try:
-            shutil.copy(os.path.join(prof, "History"), os.path.join(tmp, "h"))
+            copy_private(os.path.join(prof, "History"), os.path.join(tmp, "h"))
             hist = sqlite3.connect(os.path.join(tmp, "h"))
         except (OSError, sqlite3.Error):
             pass
         try:
-            shutil.copy(os.path.join(prof, "Favicons"), os.path.join(tmp, "f"))
+            copy_private(os.path.join(prof, "Favicons"), os.path.join(tmp, "f"))
             fav = sqlite3.connect(os.path.join(tmp, "f"))
         except (OSError, sqlite3.Error):
             pass
@@ -187,18 +292,31 @@ def from_browser():
                         "join favicon_bitmaps b on b.icon_id = f.id where im.page_url like ? and f.url like 'data:image/%' "
                         "order by b.last_updated desc, b.width desc limit 1", (like,)).fetchone()
                     if row and row[1]:
-                        os.makedirs(CACHE, exist_ok=True)
+                        ensure_private_dir(CACHE)
                         dest = os.path.join(CACHE, key + "-persona.png")
-                        part = dest + ".part"
                         data = bytes(row[1])
+                        if os.path.isfile(dest) and not os.path.islink(dest):
+                            try:
+                                os.chmod(dest, 0o600)
+                            except OSError:
+                                pass
                         if not os.path.exists(dest) or open(dest, "rb").read() != data:
-                            with open(part, "wb") as f:
-                                f.write(data)
-                            os.replace(part, dest)
+                            atomic_write(dest, lambda handle: handle.write(data))
                         avatar = dest
                 except (sqlite3.Error, OSError):
                     pass
             out[key] = (name, avatar)
+        # Sidecars SQLite opened beside the copies (WAL, shared memory) get the
+        # database's mode. chmod anyway, so a build that picks 0644 does not
+        # leave them that way.
+        try:
+            for name in os.listdir(tmp):
+                path = os.path.join(tmp, name)
+                if os.path.islink(path):
+                    continue
+                os.chmod(path, 0o700 if os.path.isdir(path) else 0o600)
+        except OSError:
+            pass
         if hist:
             hist.close()
         if fav:
@@ -457,7 +575,7 @@ def avatars(index):
             entries = json.load(f).get("value", {}).get("entries") or []
     except (OSError, ValueError):
         entries = []
-    os.makedirs(CACHE, exist_ok=True)
+    ensure_private_dir(CACHE)
     for e in entries:
         bot_id, version, url = e.get("id"), e.get("version"), e.get("dataUrl") or ""
         if not bot_id or not version or "," not in url:
@@ -465,22 +583,27 @@ def avatars(index):
         head, b64 = url.split(",", 1)
         ext = "png" if "png" in head else ("jpg" if "jpeg" in head or "jpg" in head else "img")
         dest = os.path.join(CACHE, "%s.%s" % (version, ext))
+        if os.path.isfile(dest) and not os.path.islink(dest):
+            try:
+                os.chmod(dest, 0o600)
+            except OSError:
+                pass
         if not os.path.exists(dest):
             try:
-                tmp = dest + ".part"
-                with open(tmp, "wb") as f:
-                    f.write(base64.b64decode(b64))
-                os.replace(tmp, dest)
+                raw = base64.b64decode(b64)
+                atomic_write(dest, lambda handle: handle.write(raw))
             except (OSError, ValueError):
                 continue
         out[bot_id] = dest
     # Drop pictures nobody wears any more, so changing an avatar twice does not
-    # leave two dead files behind.
+    # leave two dead files behind. In-progress atomic writes (.posse-*.part)
+    # stay: this runs on another thread from the one that writes them.
     keep = set(os.path.basename(p) for p in out.values())
     try:
         for name in os.listdir(CACHE):
-            if name not in keep:
-                os.remove(os.path.join(CACHE, name))
+            if name in keep or (name.startswith(".posse-") and name.endswith(".part")):
+                continue
+            os.remove(os.path.join(CACHE, name))
     except OSError:
         pass
     _avatars = (mtime, out)
@@ -599,6 +722,12 @@ def snapshot(index):
 
 
 def main():
+    # Older installs created this tree with the umask (0755 dirs, 0644 files).
+    # Repair it before any snapshot is emitted.
+    try:
+        tighten_state()
+    except OSError:
+        pass
     args = sys.argv[1:]
     interval = 2.0
     if "--interval" in args:

@@ -90,6 +90,19 @@ already compiled, so a changed `Widget.qml` only shows after a shell restart.
 | Grok Bot | The app's own `awaitingUserResponse` flag, read from `~/.config/Grok Bot`; "running" is the app's process |
 | Dots, Muse | A browser notification from the site; cleared when you focus its window |
 
+## Local state
+
+Learned persona names and pictures are kept in `~/.local/state/omarchy/posse`
+(`identity.json` and the `avatars/` cache). That directory is mode `0700` and
+the files in it are mode `0600`, whatever the umask is. Each write creates an
+owner-only temp file in the same directory and renames it into place, so a
+file is never briefly readable by another account. The next run of
+`drops-watch` or `posse-setup` also tightens a tree an older install left
+world-readable. Temporary copies of the browser History and Favicons databases
+are owner-only too. `bin/drop-toggle` does not write this state.
+
+Check: `python3 tests/state-perms.py` (exit 0 = pass).
+
 ## Use
 
 | | |
